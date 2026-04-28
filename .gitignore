@@ -1,34 +1,67 @@
-# Virtual Environment
+# =========================
+# Environment Files
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Virtual Environments
+# =========================
 venv/
 env/
+.venv/
 
-# Byte-compiled / cache files
+# =========================
+# Python Cache / Build
+# =========================
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
+*.so
+*.egg-info/
+build/
+dist/
+
+# =========================
+# Databases
+# =========================
 *.db
 *.sqlite3
 
-# Alembic migrations cache
-alembic/versions/*.pyc
-alembic/__pycache__/
-
-# Logs and local development
+# =========================
+# Logs
+# =========================
 logs/
 *.log
 *.pid
-*.swp
-*.swo
-*.swn
 
-# Environment Variables
-.env
-.env.*
+# =========================
+# Editor / OS Files
+# =========================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
 
-# Data & ML Models
+# =========================
+# ML / Data Files
+# =========================
 *.pkl
-*.csv
-*.h5
 *.joblib
+*.h5
+*.csv
+
+# =========================
+# Node / Frontend
+# =========================
+node_modules/
+.next/
+out/
+coverage/
+
+# =========================
+# Misc
+# =========================
 alembic.ini
