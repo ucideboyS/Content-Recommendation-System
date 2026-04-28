@@ -1,0 +1,34 @@
+# Virtual Environment
+venv/
+env/
+
+# Byte-compiled / cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+
+# Alembic migrations cache
+alembic/versions/*.pyc
+alembic/__pycache__/
+
+# Logs and local development
+logs/
+*.log
+*.pid
+*.swp
+*.swo
+*.swn
+
+# Environment Variables
+.env
+.env.*
+
+# Data & ML Models
+*.pkl
+*.csv
+*.h5
+*.joblib
+alembic.ini
