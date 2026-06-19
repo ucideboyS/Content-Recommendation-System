@@ -9,7 +9,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # Import the Base object from your app
 from app.database import Base
-from app.models import User, Movie, History  # Import models so Alembic detects them
+from app.models import User, Movie, History, Rating, Wishlist  # Import all models so Alembic detects them
 from app.config import DATABASE_URL
 
 # Alembic Config object
