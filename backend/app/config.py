@@ -21,3 +21,6 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30")
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 if not TMDB_API_KEY:
     raise ValueError("TMDB_API_KEY environment variable is not set")
+
+# GitHub Models / LLM Configuration (optional — AI features degrade gracefully)
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")

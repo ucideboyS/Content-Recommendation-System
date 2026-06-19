@@ -1,8 +1,8 @@
 ---
 
-# 🎬 Movie Recommendation System
+# 🎬 MovieRec — Intelligent Movie & TV Recommendation System
 
-This project is a **Content-Based Movie Recommendation System** that suggests movies to users based on their preferences using metadata like genres, keywords, and descriptions. It leverages machine learning techniques and an interactive frontend to deliver personalized movie recommendations.
+A **hybrid movie and TV recommendation platform** powered by multiple ML models, real-time TMDB data, and an AI-enhanced frontend. Built with **Next.js**, **FastAPI**, and **Scikit-learn**, MovieRec delivers personalized, mood-based, and content-similar recommendations with a premium glassmorphic UI.
 
 ---
 ## 🎥 Project Demo
@@ -11,10 +11,8 @@ This project is a **Content-Based Movie Recommendation System** that suggests mo
 # Watch the full project demo on YouTube:
 [MovieRec – Full Project Demo | Movie Recommendation System](https://youtu.be/e1pU-sygGWU)
 
-
-
 ---
----
+
 ## 🚀 Live Demo
 
 [![Visit Live Site](https://img.shields.io/badge/Live%20Demo-Visit%20Now-blue?style=for-the-badge)](https://movie-recommendation-system-nine-beta.vercel.app)
@@ -23,40 +21,53 @@ This project is a **Content-Based Movie Recommendation System** that suggests mo
 
 ## 📌 Table of Contents
 
-* [Abstract](#abstract)
-* [Features](#features)
-* [Tech Stack](#tech-stack)
-* [System Architecture](#system-architecture)
-* [Installation](#installation)
-* [Usage](#usage)
-* [Screenshots](#screenshots)
-* [Future Scope](#future-scope)
-* [License](#license)
+* [Abstract](#-abstract)
+* [Features](#-features)
+* [Tech Stack](#-tech-stack)
+* [ML Models & Recommendation Engine](#-ml-models--recommendation-engine)
+* [System Architecture](#️-system-architecture)
+* [Installation](#-installation)
+* [API Endpoints](#-api-endpoints)
+* [Usage](#-usage)
+* [Screenshots](#-screenshots)
+* [Future Scope](#-future-scope)
+* [License](#-license)
 
 ---
 
 ## 🧠 Abstract
 
-The Movie Recommendation System enhances user experience by providing **personalized movie suggestions** using **content-based filtering** techniques. It analyzes movie metadata such as genres, keywords, and descriptions. Core ML techniques like **TF-IDF**, **Count Vectorizer**, and **Cosine Similarity** are used to compute similarities between movies.
+MovieRec enhances the user experience by providing **personalized movie and TV show suggestions** using a **multi-source hybrid recommendation engine**. Unlike traditional systems that rely on a single algorithm, MovieRec combines:
 
-The system is designed to work even for new users (cold-start problem) and does not depend on user ratings or collaborative behavior. Built with **Python, Pandas, NumPy, Scikit-learn**, and a **React.js** frontend, it ensures a seamless and engaging user experience.
+- **Content-Based Filtering** (TF-IDF + Cosine Similarity) — analyzes movie metadata (overview, genres, cast, director, keywords)
+- **Naive Bayes Mood Classifier** — maps user moods to genre combinations
+- **Random Forest Personalization** — learns from individual user rating patterns
+- **TMDB Recommendations & Similar** — leverages TMDB's viewing-pattern data
+
+The system handles cold-start users via preference-based recommendations and progressively improves with user interaction. Built with **Python, FastAPI, Next.js, PostgreSQL**, and a modern glassmorphic UI.
 
 ---
 
 ## ✨ Features
 
-* 🔐 User Registration & Login
-* 🎥 Personalized Movie Recommendations
-* 📜 Search and Movie Detail View
-* 📖 Search & Recommendation History
-* ⚙️ Content-Based Filtering using Cosine Similarity
-* 💻 Interactive Frontend built in React.js
-* 🧮 Efficient backend processing using Python & Jupyter Notebook
+| Feature | Description |
+|---------|-------------|
+| 🔐 **Authentication** | User registration with genre/actor/director preferences, JWT-based login |
+| 🎯 **Hybrid Recommendations** | Multi-source engine combining TMDB + Content-Based ML + Random Forest |
+| 🎭 **Mood-Based Discovery** | Select your mood → get AI-curated recommendations (7 mood categories) |
+| 🔍 **Live Search** | Debounced real-time search (300ms) with movie/TV/all filter tabs |
+| 🧠 **Smart Search** | AI-powered natural language search ("fun sci-fi movies from the 90s") |
+| 📺 **TV Show Support** | Full TV series support with season info, proper labeling, and recommendations |
+| 🇮🇳 **Hindi Movies** | Dedicated Bollywood/Hindi cinema section on home page |
+| 👶 **Kids Section** | Separate kids-only section; family content filtered from main carousels |
+| ❤️ **Wishlist** | Save movies/shows with dynamic media type support |
+| 🎬 **Trailers** | Watch trailers directly in the app |
+| 📊 **Rating System** | Rate movies on a 5-star scale |
+| 📖 **Watch History** | Automatic history tracking of viewed content |
+| 👤 **User Profile** | View and manage preferences |
+| ⚡ **Optimized Performance** | GPU-accelerated scroll, lazy-loaded images, no backdrop-filter jank |
 
 ---
-# Movie Recommendation System
-
-[![Visit Live Site](https://img.shields.io/badge/Live%20Demo-Visit%20Now-blue?style=for-the-badge)](https://movie-recommendation-system-nine-beta.vercel.app)
 
 ## Technologies Used
 
@@ -90,18 +101,73 @@ The system is designed to work even for new users (cold-start problem) and does 
 ![npm](https://img.shields.io/badge/npm-CB3837?style=for-the-badge&logo=npm&logoColor=white)
 ![Postman](https://img.shields.io/badge/Postman-FF6C37?style=for-the-badge&logo=postman&logoColor=white)
 ![.env](https://img.shields.io/badge/.env-ECD53F?style=for-the-badge)
-## 🧰 Tech Stack
+
+---
+
+## 🤖 ML Models & Recommendation Engine
+
+### Trained Models
+
+| Model | File | Technique | Details |
+|-------|------|-----------|---------|
+| Content-Based | `content_based.pkl` | TF-IDF + Cosine Similarity | 214 movies, 2,402 features |
+| Naive Bayes | `naive_bayes_model.pkl` | Multinomial NB Mood Classifier | 7 mood classes, 214 training samples |
+| Random Forest | `random_forest_model.pkl` | RF Regressor (per-user) | 6 features, personalized |
+
+### Hybrid Recommendation Algorithm
+
+The `/api/recommend/by-id/{tmdb_id}` endpoint uses a **multi-source hybrid approach**:
+
+1. **TMDB Recommendations** — viewing-pattern based (highest weight, `source_bonus=1.3`)
+2. **TMDB Similar Movies** — genre/keyword matching (`source_bonus=1.0`)
+3. **Content-Based ML Model** — TF-IDF cosine similarity from trained model (`score × 0.9`)
+4. **TV Fallback** — auto-detects TV show IDs and fetches TV recommendations
+
+Each candidate is scored:
+```
+score = vote_average × popularity_factor × source_bonus × rank_decay
+```
+
+Results are **deduplicated** across all sources and **ranked by combined score**, returning the top 10.
+
+### Mood-Based Recommendations
+
+7 supported moods: `happy`, `sad`, `tense`, `nostalgic`, `adventurous`, `romantic`, `thoughtful`
+
+Uses the trained Naive Bayes classifier to score movies against mood-genre mappings, with TMDB genre discovery as fallback.
 
 ---
 
 ## 🛠️ System Architecture
 
-* **User Input:** Preferences like favorite genres, actors, and directors
-* **Data Source:** Movies fetched from TMDB dataset
-* **Feature Extraction:** TF-IDF / Count Vectorizer on metadata
-* **Similarity Calculation:** Cosine Similarity
-* **Frontend:** React.js interface for user interactions
-* **Backend:** Python for data processing and serving recommendations
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Frontend (Next.js)                     │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────────┐  │
+│  │  Browse   │ │  Search  │ │  Detail  │ │  Wishlist   │  │
+│  │  (Home)   │ │  (Live)  │ │  (Movie/ │ │  History    │  │
+│  │  Hindi    │ │  Smart   │ │   TV)    │ │  Profile    │  │
+│  │  Kids     │ │  Filter  │ │  Rate    │ │  Trailers   │  │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └─────┬──────┘  │
+│       │             │            │              │         │
+└───────┼─────────────┼────────────┼──────────────┼─────────┘
+        │             │            │              │
+        ▼             ▼            ▼              ▼
+┌─────────────────────────────────────────────────────────┐
+│                  Backend (FastAPI)                        │
+│  ┌───────────┐ ┌───────────┐ ┌───────────┐ ┌─────────┐  │
+│  │  User API │ │ Recommend │ │   AI API  │ │Wishlist │  │
+│  │  (Auth)   │ │  (Hybrid) │ │  (Smart   │ │  API    │  │
+│  │           │ │  (Mood)   │ │  Search)  │ │         │  │
+│  └─────┬─────┘ └─────┬─────┘ └─────┬─────┘ └────┬────┘  │
+│        │              │             │             │       │
+│        ▼              ▼             ▼             ▼       │
+│  ┌──────────────────────────────────────────────────┐    │
+│  │          ML Models + TMDB API + PostgreSQL        │    │
+│  │  Content-Based │ Naive Bayes │ Random Forest      │    │
+│  └──────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -158,27 +224,21 @@ ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-#### 🤖 Add Trained Model
+#### 🤖 Train ML Models
 
-Place the `.pkl` model files in:
-
-```
-movie-recommendation-system/backend/app/ml_model/
-```
-
-You can download the models by running:
+Run the training script to populate the database and generate model files:
 
 ```bash
-python backend/app/download_models.py
+python -m app.ml_model.train_models
 ```
 
-✅ Make sure to:
+This will:
+- Fetch movie data from TMDB and enrich it
+- Build the Content-Based TF-IDF model (`content_based.pkl`)
+- Train the Naive Bayes mood classifier (`naive_bayes_model.pkl`)
+- Prepare the Random Forest model (`random_forest_model.pkl`)
 
-* Run this **after activating the virtual environment**.
-* Ensure all dependencies are installed (`pip install -r requirements.txt`).
-* Be in the **root directory** (`movie-recommendation-system/`) or adjust the path accordingly if you're inside the `backend` folder:
-
-If you're **inside the `backend` folder**, use:
+Alternatively, download pre-trained models:
 
 ```bash
 python app/download_models.py
@@ -230,22 +290,59 @@ The frontend will be available at: [http://localhost:3000](http://localhost:3000
 
 ---
 
+## 📡 API Endpoints
+
+### User Management
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/users/register` | Register new user with preferences |
+| POST | `/api/users/login` | Login and receive JWT token |
+| GET | `/api/users/profile` | Get user profile |
+
+### Recommendations
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/recommend?movie={name}` | TMDB-based similar movies |
+| GET | `/api/recommend/by-id/{tmdb_id}` | **Hybrid** multi-source recommendations |
+| GET | `/api/recommend/hybrid` | Personalized ML recommendations (auth required) |
+| GET | `/api/recommend/mood/{mood}` | Mood-based recommendations |
+| GET | `/api/recommend/cold-start` | New user recommendations from preferences |
+
+### AI Features
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/ai/smart-search` | Natural language movie search |
+| POST | `/api/ai/mood-recommendations` | AI-enhanced mood recommendations |
+| POST | `/api/ai/trending-context` | AI insights for movie detail page |
+
+### Wishlist
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/wishlist` | Get user's wishlist |
+| POST | `/api/wishlist/add` | Add to wishlist (movie or TV) |
+| DELETE | `/api/wishlist/remove` | Remove from wishlist |
+| GET | `/api/wishlist/check/{id}` | Check if item is in wishlist |
+
+### Health
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+
+---
 
 ## 🚀 Usage
 
-1. Register or log in.
-2. Search for movies or browse suggestions.
-3. View detailed information and similar movies.
-4. Revisit previous search history.
+1. **Register** — Sign up with your favorite genres, actors, and directors
+2. **Browse** — Explore Trending, Popular, Hindi, TV Series, and Top Rated carousels
+3. **Search** — Start typing to see live results, filter by Movie/TV/All
+4. **Discover by Mood** — Select how you're feeling for curated suggestions
+5. **Movie Details** — View full info, watch trailers, rate, add to wishlist
+6. **Get Recommendations** — Click "Get Recommendations" on any movie for similar content
+7. **Kids Section** — Safe, family-friendly content in a dedicated section
 
 ---
 
 ## 📸 Screenshots
-
-
----
-
-## 🎬 Features
 
 ### 1. 🔐 User Registration
 
@@ -265,7 +362,7 @@ Registered users can log in using their valid username and password.
 
 ### 3. 🏠 Home Page
 
-Displays popular movies and personalized recommendations for the user.
+Displays trending, popular, Hindi, TV series, and top-rated content with mood-based recommendations. Kids content is filtered to its own section.
 ![image](https://github.com/user-attachments/assets/61c45f8d-d2f1-4497-a502-2c0e8b277e0b)
 ![image](https://github.com/user-attachments/assets/62d5ce17-d5a4-46e3-8a63-334d71bcc1f8)
 
@@ -273,16 +370,16 @@ Displays popular movies and personalized recommendations for the user.
 
 ### 4. 🔍 Search Engine
 
-Users can search for movies. 
+Live search with debounced results (300ms), media type filtering (All/Movies/TV Series), and AI-powered Smart Search.
 ![image](https://github.com/user-attachments/assets/9d461008-304e-48b2-a46f-123e71f8e355)
 
 ---
 
-### 5. 🎥 Movie Description
+### 5. 🎥 Movie & TV Show Details
 
 Users can:
 
-* View detailed information about the movie
+* View detailed information about movies and TV shows (with season count for TV)
 ![image](https://github.com/user-attachments/assets/2b1acbaf-de93-47d8-9937-b0f655d9e741)
  
 * Watch trailers
@@ -291,8 +388,7 @@ Users can:
 * Rate movies on a scale of 5
 ![image](https://github.com/user-attachments/assets/99f8b6f6-63be-4f47-95a9-1c9afa95dccb)
 
-* Get similar movie recommendations by clicking on the **"Get Recommendation"** button
-Recommendations are generated based on a **Content-based recommendation system**.
+* Get similar recommendations via the **hybrid multi-source engine** (TMDB + ML Model)
 ![image](https://github.com/user-attachments/assets/be9e69af-d959-4fb4-a281-1c357e76d045)
 ![image](https://github.com/user-attachments/assets/34be47dd-cdab-4598-9b34-f32366603592)
 
@@ -311,17 +407,15 @@ Users can view and manage their profile.
 ![image](https://github.com/user-attachments/assets/64735060-f955-4d47-a344-645a542e8f98)
 ![image](https://github.com/user-attachments/assets/60aeab1a-e70a-4e8d-937a-10cada0e3236)
 
-
----
-
-
-
 ---
 
 ## 🔮 Future Scope
 
-* Add collaborative filtering for hybrid recommendations
-* Improve UI/UX with advanced animations
+* Collaborative filtering for enhanced hybrid recommendations
+* User-to-user similarity for social recommendations
+* Multi-language support beyond Hindi
+* Watch providers integration (where to stream)
+* Advanced analytics dashboard
 
 ---
 

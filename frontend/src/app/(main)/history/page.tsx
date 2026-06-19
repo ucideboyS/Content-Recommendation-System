@@ -24,173 +24,81 @@ export default function HistoryPage() {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                // Check if we have a valid token
-                if (!token) {
-                    console.log('No token found, redirecting to login...');
-                    router.push('/login');
-                    return;
-                }
+                if (!token) { router.push('/login'); return; }
 
-                setLoading(true);
-                setError(null);
-
-                // Log the token being used (first 10 characters for security)
-                console.log('Using token:', token.substring(0, 10) + '...');
-
-                // Fetch user's history
-                console.log('Fetching user history...');
                 const response = await axios.get(
                     `${process.env.NEXT_PUBLIC_API_URL}/api/users/history`,
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
+                    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
                 );
 
-                console.log('History response:', response.data);
+                const historyData = response.data || [];
+                const moviesWithDetails = await Promise.all(
+                    historyData.map(async (item: { title: string; movie_id?: number }) => {
+                        try {
+                            const tmdbResponse = await axios.get(
+                                `https://api.themoviedb.org/3/search/movie?api_key=${process.env.NEXT_PUBLIC_TMDB_API_KEY}&query=${encodeURIComponent(item.title)}&page=1`
+                            );
+                            const matchedMovie = tmdbResponse.data.results[0];
+                            if (matchedMovie) {
+                                return {
+                                    id: matchedMovie.id,
+                                    title: matchedMovie.title,
+                                    poster_path: matchedMovie.poster_path,
+                                    vote_average: matchedMovie.vote_average,
+                                };
+                            }
+                            return null;
+                        } catch { return null; }
+                    })
+                );
 
-                if (!response.data || !Array.isArray(response.data)) {
-                    console.error('Invalid history response format:', response.data);
-                    setError('Invalid history data received from server');
-                    setHistory([]);
-                    return;
-                }
-
-                if (response.data.length === 0) {
-                    console.log('No history items found');
-                    setHistory([]);
-                    return;
-                }
-
-                // Convert history items directly to movies
-                const movies: Movie[] = response.data.map(item => ({
-                    id: item.id,
-                    title: item.title,
-                    poster_path: item.poster_path.replace('https://image.tmdb.org/t/p/w500', ''),
-                    vote_average: 0 // We don't have this in the history response
-                }));
-
-                console.log('Processed movies:', movies);
-                setHistory(movies);
-
-                if (movies.length === 0) {
-                    setError('No movies found in your history.');
-                }
-            } catch (error) {
-                console.error('Error fetching history:', error);
-                if (axios.isAxiosError(error)) {
-                    if (error.response?.status === 401) {
-                        console.log('Token expired or invalid, redirecting to login...');
-                        // Clear the invalid token
-                        useAuthStore.getState().clearAuth();
-                        setError('Your session has expired. Please log in again.');
-                        router.push('/login');
-                    } else {
-                        const errorMessage = error.response?.data?.detail || error.message;
-                        console.error('Detailed error:', errorMessage);
-                        setError(`Failed to load history: ${errorMessage}`);
-                    }
-                } else {
-                    setError('An unexpected error occurred. Please try again.');
-                }
+                setHistory(moviesWithDetails.filter(Boolean) as Movie[]);
+            } catch (err) {
+                console.error('Error fetching history:', err);
+                setError('Failed to load history');
             } finally {
                 setLoading(false);
             }
         };
 
-        // Only fetch if we're initialized and have a token
-        if (isInitialized) {
-            if (!token) {
-                router.push('/login');
-            } else {
-                fetchHistory();
-            }
-        }
+        if (isInitialized) fetchHistory();
     }, [isInitialized, token, router]);
 
-    // Show loading state while initializing
-    if (!isInitialized) {
+    if (loading) {
         return (
-            <div className="min-h-screen bg-black flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p className="text-white">Initializing...</p>
-                </div>
+            <div className="flex justify-center items-center min-h-screen">
+                <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
             </div>
         );
     }
 
-    // Show nothing while redirecting to login
-    if (!token) {
-        return null;
-    }
-
     return (
-        <div className="min-h-screen bg-black text-white p-8">
-            <div className="max-w-7xl mx-auto">
-                <h1 className="text-3xl font-bold mb-8">Your Movie History</h1>
+        <div className="p-6 lg:p-8 min-h-screen">
+            <h1 className="text-2xl font-bold mb-1" style={{ color: '#1e293b' }}>📖 Watch History</h1>
+            <p className="text-sm mb-6" style={{ color: '#64748b' }}>Movies you&apos;ve browsed recently</p>
 
-                {error && (
-                    <div className="mb-8 p-4 bg-red-900/50 border border-red-500 rounded-lg">
-                        <p className="text-red-500">{error}</p>
-                        <div className="mt-4 flex gap-4">
-                            <button
-                                onClick={() => {
-                                    if (token) {
-                                        setLoading(true);
-                                        setError(null);
-                                        window.location.reload();
-                                    } else {
-                                        router.push('/login');
-                                    }
-                                }}
-                                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-                            >
-                                {token ? 'Try Again' : 'Login'}
-                            </button>
-                            <button
-                                onClick={() => router.push('/search')}
-                                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                            >
-                                Search Movies
-                            </button>
+            {error && (
+                <div className="glass-card p-4 mb-6" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)' }}>
+                    <p className="text-sm" style={{ color: '#ef4444' }}>{error}</p>
+                </div>
+            )}
+
+            {history.length === 0 ? (
+                <div className="glass-card p-12 text-center">
+                    <span className="text-5xl mb-4 block">📭</span>
+                    <h3 className="text-lg font-semibold mb-2" style={{ color: '#1e293b' }}>No history yet</h3>
+                    <p className="text-sm mb-4" style={{ color: '#64748b' }}>Start exploring movies to build your history</p>
+                    <button onClick={() => router.push('/')} className="btn-primary">Browse Movies</button>
+                </div>
+            ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {history.map((movie) => movie.poster_path && (
+                        <div key={movie.id} className="animate-fadeIn">
+                            <MovieCard movie={movie} onClick={() => router.push(`/movies/${movie.id}`)} />
                         </div>
-                    </div>
-                )}
-
-                {loading && (
-                    <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                        <p className="text-gray-400">Loading your movie history...</p>
-                    </div>
-                )}
-
-                {!loading && history.length > 0 && (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                        {history.map((movie) => (
-                            <MovieCard 
-                                key={movie.id}
-                                movie={movie}
-                                onClick={() => router.push(`/movies/${movie.id}`)}
-                            />
-                        ))}
-                    </div>
-                )}
-
-                {!loading && history.length === 0 && !error && (
-                    <div className="text-center py-12">
-                        <p className="text-gray-400 text-lg mb-4">No movies in your history yet.</p>
-                        <button
-                            onClick={() => router.push('/search')}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                        >
-                            Search Movies
-                        </button>
-                    </div>
-                )}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
-} 
+}

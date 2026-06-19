@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.routes import user, recommend
+from app.routes import user, recommend, ai, wishlist
 import uvicorn
 import os
 import logging
@@ -38,6 +38,8 @@ app.add_middleware(
 # Include routers
 app.include_router(user.router, prefix="/api/users", tags=["users"])
 app.include_router(recommend.router, prefix="/api/recommend", tags=["recommendations"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
 
 @app.get("/")
 async def root():

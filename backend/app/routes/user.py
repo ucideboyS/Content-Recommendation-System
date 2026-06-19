@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-import requests
+from app.http_client import safe_get
 from app.database import get_db
 from app.auth import hash_password, verify_password, create_access_token 
 from app.models import User, Movie, History, Rating
@@ -98,15 +98,17 @@ def get_history(user: User = Depends(get_current_user), db: Session = Depends(ge
     result = []
     for entry in history_entries:
         movie = db.query(Movie).filter(Movie.id == entry.movie_id).first()
-        
-        # Fetch movie poster from TMDB API
-        tmdb_url = f"https://api.themoviedb.org/3/movie/{movie.tmdb_id}?api_key={TMDB_API_KEY}"
-        response = requests.get(tmdb_url)
-        
         poster_path = None
-        if response.status_code == 200:
-            movie_data = response.json()
-            poster_path = f"https://image.tmdb.org/t/p/w500{movie_data.get('poster_path', '')}"
+
+        if movie:
+            try:
+                tmdb_url = f"https://api.themoviedb.org/3/movie/{movie.tmdb_id}"
+                response = safe_get(tmdb_url, params={"api_key": TMDB_API_KEY})
+                if response.status_code == 200:
+                    movie_data = response.json()
+                    poster_path = f"https://image.tmdb.org/t/p/w500{movie_data.get('poster_path', '')}"
+            except Exception as e:
+                print(f"TMDB fetch failed for {entry.title}: {e}")
 
         result.append({
             "id": entry.id,
@@ -131,8 +133,8 @@ def add_history(
         print(f"User ID: {user.id}")  # Debugging
 
         # Fetch movie details from TMDB API to verify it exists
-        tmdb_url = f"https://api.themoviedb.org/3/movie/{tmdb_movie_id}?api_key={TMDB_API_KEY}"
-        response = requests.get(tmdb_url)
+        tmdb_url = f"https://api.themoviedb.org/3/movie/{tmdb_movie_id}"
+        response = safe_get(tmdb_url, params={"api_key": TMDB_API_KEY})
         print(f"TMDB API Request: {tmdb_url}")  # Debugging
         print(f"TMDB API Status Code: {response.status_code}")  # Debugging
 
@@ -267,7 +269,7 @@ def get_personalized_recommendations(user: User = Depends(get_current_user)):
         # If user has favorite genres, use them
         if favorite_genres:
             # Get genre IDs from TMDB
-            genre_response = requests.get(
+            genre_response = safe_get(
                 "https://api.themoviedb.org/3/genre/movie/list",
                 params={"api_key": TMDB_API_KEY, "language": "en-US"}
             )
@@ -278,7 +280,7 @@ def get_personalized_recommendations(user: User = Depends(get_current_user)):
                     params["with_genres"] = ",".join(map(str, genre_ids))
 
         # Fetch recommended movies from TMDB
-        response = requests.get(
+        response = safe_get(
             "https://api.themoviedb.org/3/discover/movie",
             params=params
         )
@@ -292,7 +294,7 @@ def get_personalized_recommendations(user: User = Depends(get_current_user)):
         if favorite_actors or favorite_directors:
             for person in favorite_actors + favorite_directors:
                 # Search for person in TMDB
-                person_response = requests.get(
+                person_response = safe_get(
                     "https://api.themoviedb.org/3/search/person",
                     params={
                         "api_key": TMDB_API_KEY,
@@ -305,7 +307,7 @@ def get_personalized_recommendations(user: User = Depends(get_current_user)):
                     person_id = person_response.json()["results"][0]["id"]
                     
                     # Get person's movies
-                    person_movies_response = requests.get(
+                    person_movies_response = safe_get(
                         f"https://api.themoviedb.org/3/person/{person_id}/movie_credits",
                         params={"api_key": TMDB_API_KEY}
                     )
@@ -384,7 +386,7 @@ def update_profile(
 async def search_movies(query: str):
     try:
         print(f"Searching for movies with query: {query}")  # Debug log
-        response = requests.get(
+        response = safe_get(
             "https://api.themoviedb.org/3/search/movie",
             params={
                 "api_key": TMDB_API_KEY,
@@ -408,7 +410,7 @@ async def search_movies(query: str):
 async def get_popular_movies():
     try:
         print(f"Fetching popular movies with API key: {TMDB_API_KEY[:5]}...")  # Debug log
-        response = requests.get(
+        response = safe_get(
             "https://api.themoviedb.org/3/movie/popular",
             params={
                 "api_key": TMDB_API_KEY,
@@ -444,8 +446,9 @@ async def rate_movie(
         movie = db.query(Movie).filter(Movie.tmdb_id == tmdb_id).first()
         if not movie:
             # Fetch movie details from TMDB
-            response = requests.get(
-                f"https://api.themoviedb.org/3/movie/{tmdb_id}?api_key={TMDB_API_KEY}"
+            response = safe_get(
+                f"https://api.themoviedb.org/3/movie/{tmdb_id}",
+                params={"api_key": TMDB_API_KEY}
             )
             if response.status_code != 200:
                 raise HTTPException(status_code=404, detail="Movie not found")

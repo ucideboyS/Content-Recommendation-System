@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuthStore } from '@/store/auth';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
@@ -9,159 +9,235 @@ import MovieCard from '@/components/ui/MovieCard';
 interface Movie {
     id: number;
     title: string;
+    name?: string;
     overview: string;
     poster_path: string;
     vote_average: number;
+    release_date?: string;
+    first_air_date?: string;
+    media_type?: string;
 }
 
-interface SearchMovieResponse {
-    adult: boolean;
-    backdrop_path: string;
-    genre_ids: number[];
-    id: number;
-    original_language: string;
-    original_title: string;
-    overview: string;
-    popularity: number;
-    poster_path: string;
-    release_date: string;
-    title: string;
-    video: boolean;
-    vote_average: number;
-    vote_count: number;
-}
+const API_URL = process.env.NEXT_PUBLIC_API_URL;
+const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+
+type MediaFilter = 'all' | 'movie' | 'tv';
 
 export default function SearchPage() {
-    const [searchQuery, setSearchQuery] = useState('');
-    const [searchResults, setSearchResults] = useState<Movie[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const token = useAuthStore(state => state.token);
-    const isInitialized = useAuthStore(state => state.isInitialized);
     const router = useRouter();
+    const token = useAuthStore(state => state.token);
 
-    useEffect(() => {
-        if (isInitialized && !token) {
-            router.push('/login');
+    const [query, setQuery] = useState('');
+    const [results, setResults] = useState<Movie[]>([]);
+    const [loading, setLoading] = useState(false);
+    const [mediaFilter, setMediaFilter] = useState<MediaFilter>('all');
+    const [smartSearch, setSmartSearch] = useState(false);
+    const [parsedFilters, setParsedFilters] = useState<{ genres?: string[]; mood?: string; era?: string; similar_to?: string } | null>(null);
+    const [hasSearched, setHasSearched] = useState(false);
+    const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+    const handleSearch = useCallback(async (searchQuery?: string) => {
+        const q = (searchQuery ?? query).trim();
+        if (!q) {
+            setResults([]);
+            setHasSearched(false);
+            return;
         }
-    }, [isInitialized, token, router]);
-
-    const handleSearch = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!searchQuery.trim()) return;
+        setLoading(true);
+        setParsedFilters(null);
+        setHasSearched(true);
 
         try {
-            setLoading(true);
-            setError(null);
-            setSearchResults([]); // Clear previous results
-
-            const searchResponse = await axios.get(
-                `${process.env.NEXT_PUBLIC_API_URL}/api/users/search/movie`,
-                {
-                    params: { query: searchQuery },
-                    headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json'
-                    }
-                }
-            );
-
-            if (searchResponse.data && searchResponse.data.results) {
-                const movies = searchResponse.data.results.map((movie: SearchMovieResponse) => ({
-                    id: movie.id,
-                    title: movie.title,
-                    overview: movie.overview,
-                    poster_path: movie.poster_path,
-                    vote_average: movie.vote_average
-                }));
-                setSearchResults(movies);
-            }
-        } catch (error) {
-            console.error('Error in search:', error);
-            if (axios.isAxiosError(error)) {
-                if (error.response?.status === 401) {
-                    setError('Your session has expired. Please log in again.');
-                    router.push('/login');
-                } else {
-                    setError(`Search failed: ${error.response?.data?.detail || error.message}`);
-                }
+            if (smartSearch && token) {
+                // AI-powered search
+                const resp = await axios.post(
+                    `${API_URL}/api/ai/smart-search`,
+                    { query: q },
+                    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+                );
+                setResults(resp.data?.results || []);
+                setParsedFilters(resp.data?.parsed_filters || null);
             } else {
-                setError('An unexpected error occurred. Please try again.');
+                // Always use multi-search for best results (returns media_type)
+                const multiResp = await axios.get(
+                    `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&language=en-US&page=1`
+                );
+                let items = (multiResp.data.results || [])
+                    // Filter out people, keep only movie/tv with posters
+                    .filter((item: Movie & { media_type?: string }) =>
+                        (item.media_type === 'movie' || item.media_type === 'tv') && item.poster_path
+                    )
+                    // Apply user's media filter
+                    .filter((item: Movie & { media_type?: string }) =>
+                        mediaFilter === 'all' || item.media_type === mediaFilter
+                    )
+                    // Normalize TV fields
+                    .map((item: Movie) => ({
+                        ...item,
+                        title: item.title || item.name,
+                        release_date: item.release_date || item.first_air_date,
+                    }));
+
+                // If multi-search returns too few results with a specific filter, supplement
+                if (items.length < 3 && mediaFilter !== 'all') {
+                    const typeEndpoint = mediaFilter === 'tv'
+                        ? `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&language=en-US&page=1`
+                        : `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_KEY}&query=${encodeURIComponent(q)}&language=en-US&page=1`;
+                    const typeResp = await axios.get(typeEndpoint);
+                    const existingIds = new Set(items.map((i: Movie) => i.id));
+                    const extra = (typeResp.data.results || [])
+                        .filter((item: Movie) => item.poster_path && !existingIds.has(item.id))
+                        .map((item: Movie) => ({
+                            ...item,
+                            title: item.title || item.name,
+                            release_date: item.release_date || item.first_air_date,
+                            media_type: mediaFilter,
+                        }));
+                    items = [...items, ...extra];
+                }
+
+                setResults(items);
             }
+        } catch (err) {
+            console.error('Search failed:', err);
         } finally {
             setLoading(false);
         }
-    };
+    }, [query, mediaFilter, smartSearch, token]);
 
-    if (!isInitialized || !token) {
-        return (
-            <div className="min-h-screen bg-black flex items-center justify-center">
-                <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                    <p className="text-white">Loading...</p>
-                </div>
-            </div>
-        );
-    }
+    // Debounced live search — triggers 400ms after user stops typing
+    useEffect(() => {
+        if (debounceTimer.current) {
+            clearTimeout(debounceTimer.current);
+        }
+
+        if (!query.trim()) {
+            setResults([]);
+            setHasSearched(false);
+            return;
+        }
+
+        debounceTimer.current = setTimeout(() => {
+            handleSearch(query);
+        }, 300);
+
+        return () => {
+            if (debounceTimer.current) {
+                clearTimeout(debounceTimer.current);
+            }
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [query, mediaFilter]);
 
     return (
-        <div className="min-h-screen bg-black text-white p-8">
-            <div className="max-w-7xl mx-auto">
-                <h1 className="text-3xl font-bold mb-8">Search Movies</h1>
+        <div className="p-6 lg:p-8 min-h-screen">
+            <h1 className="text-2xl font-bold mb-1" style={{ color: '#1e293b' }}>🔍 Search</h1>
+            <p className="text-sm mb-6" style={{ color: '#64748b' }}>Find movies and TV series</p>
 
-                <form onSubmit={handleSearch} className="mb-8">
-                    <div className="flex gap-4">
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Enter a movie title (e.g., Interstellar)"
-                            className="flex-1 px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 focus:outline-none focus:border-blue-500"
-                        />
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            {/* Search bar */}
+            <div className="glass-card p-4 mb-6">
+                <div className="flex gap-3 items-center">
+                    <input
+                        type="text"
+                        value={query}
+                        onChange={(e) => setQuery(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                        placeholder={smartSearch ? "Try: 'fun sci-fi movies from the 90s'" : "Start typing to search movies, TV series..."}
+                        className="flex-1 px-4 py-3 rounded-xl text-sm outline-none transition-all"
+                        style={{
+                            background: 'rgba(241,245,249,0.8)',
+                            border: '1px solid rgba(0,0,0,0.06)',
+                            color: '#1e293b',
+                        }}
+                    />
+                    <button onClick={() => handleSearch()} className="btn-primary whitespace-nowrap">
+                        Search
+                    </button>
+                </div>
+
+                {/* Filter row */}
+                <div className="flex items-center justify-between mt-3 flex-wrap gap-3">
+                    {/* Media type tabs */}
+                    <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(241,245,249,0.8)' }}>
+                        {(['all', 'movie', 'tv'] as MediaFilter[]).map((filter) => (
+                            <button
+                                key={filter}
+                                onClick={() => setMediaFilter(filter)}
+                                className="px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+                                style={mediaFilter === filter ? {
+                                    background: 'white',
+                                    color: '#3b82f6',
+                                    boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                                } : {
+                                    background: 'transparent',
+                                    color: '#64748b',
+                                }}
+                            >
+                                {filter === 'all' ? '🌐 All' : filter === 'movie' ? '🎥 Movies' : '📺 TV Series'}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Smart search toggle */}
+                    <label className="flex items-center gap-2 cursor-pointer">
+                        <span className="text-xs font-medium" style={{ color: '#64748b' }}>🧠 Smart Search</span>
+                        <div
+                            className="relative w-10 h-5 rounded-full transition-colors cursor-pointer"
+                            style={{ background: smartSearch ? '#3b82f6' : '#cbd5e1' }}
+                            onClick={() => setSmartSearch(!smartSearch)}
                         >
-                            {loading ? 'Searching...' : 'Search'}
-                        </button>
-                    </div>
-                </form>
-
-                {error && (
-                    <div className="mb-8 p-4 bg-red-900/50 border border-red-500 rounded-lg">
-                        <p className="text-red-500">{error}</p>
-                    </div>
-                )}
-
-                {loading && (
-                    <div className="text-center py-8">
-                        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mx-auto mb-4"></div>
-                        <p className="text-gray-400">Searching for movies...</p>
-                    </div>
-                )}
-
-                {!loading && searchResults.length > 0 && (
-                    <section>
-                        <h2 className="text-2xl font-semibold mb-6">Search Results</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-                            {searchResults.map((movie) => (
-                                <MovieCard 
-                                    key={movie.id}
-                                    movie={movie}
-                                    onClick={() => router.push(`/movies/${movie.id}`)}
-                                />
-                            ))}
+                            <div
+                                className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform"
+                                style={{ left: smartSearch ? '22px' : '2px' }}
+                            />
                         </div>
-                    </section>
-                )}
-
-                {!loading && searchResults.length === 0 && searchQuery && (
-                    <p className="text-gray-400 text-center py-8">
-                        No movies found. Try searching for a different movie.
-                    </p>
-                )}
+                    </label>
+                </div>
             </div>
+
+            {/* AI Parsed filters */}
+            {parsedFilters && (
+                <div className="flex flex-wrap gap-2 mb-4">
+                    {parsedFilters.genres?.map((g: string) => (
+                        <span key={g} className="badge badge-movie">{g}</span>
+                    ))}
+                    {parsedFilters.mood && <span className="badge" style={{ background: 'rgba(168,85,247,0.1)', color: '#8b5cf6' }}>🎭 {parsedFilters.mood}</span>}
+                    {parsedFilters.era && <span className="badge" style={{ background: 'rgba(245,158,11,0.1)', color: '#f59e0b' }}>📅 {parsedFilters.era}</span>}
+                    {parsedFilters.similar_to && <span className="badge" style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981' }}>🎯 Like: {parsedFilters.similar_to}</span>}
+                </div>
+            )}
+
+            {/* Results */}
+            {loading ? (
+                <div className="flex justify-center py-20">
+                    <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-500 rounded-full animate-spin" />
+                </div>
+            ) : results.length > 0 ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                    {results.filter(m => m.poster_path).map((movie) => (
+                        <div key={movie.id} className="animate-fadeIn">
+                            <MovieCard
+                                movie={{
+                                    ...movie,
+                                    title: movie.title || movie.name || '',
+                                    media_type: movie.media_type,
+                                }}
+                                onClick={() => router.push(`/movies/${movie.id}`)}
+                            />
+                        </div>
+                    ))}
+                </div>
+            ) : hasSearched ? (
+                <div className="glass-card p-12 text-center">
+                    <span className="text-4xl mb-3 block">🔎</span>
+                    <p style={{ color: '#64748b' }}>No results found for &ldquo;{query}&rdquo;</p>
+                </div>
+            ) : (
+                <div className="glass-card p-12 text-center">
+                    <span className="text-4xl mb-3 block">🎬</span>
+                    <p style={{ color: '#64748b' }}>Start typing to search movies and TV series</p>
+                </div>
+            )}
         </div>
     );
-} 
+}
