@@ -1,10 +1,11 @@
 #!/bin/bash
 
+set -e
+
+echo "Starting application setup..."
+
 # Create necessary directories
 mkdir -p app/ml_model
-
-# Install dependencies
-pip install -r requirements.txt
 
 # Download model files only if they don't exist
 if [ ! -f "app/ml_model/simi.pkl" ] || [ ! -f "app/ml_model/Movies_Datase.pkl" ]; then
@@ -14,8 +15,9 @@ else
     echo "Model files already exist, skipping download..."
 fi
 
-# Run database migrations
-alembic -c /app/alembic.ini upgrade head
+# Skip migrations for now
+echo "Skipping database migrations..."
 
-# Start the application
-uvicorn app.main:app --host 0.0.0.0 --port $PORT 
+# Start FastAPI
+echo "Starting FastAPI server..."
+uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
