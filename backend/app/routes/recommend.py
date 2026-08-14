@@ -78,14 +78,30 @@ def get_recommendations_by_id(tmdb_id: int):
     1. TMDB Recommendations (viewing-pattern based)
     2. TMDB Similar Movies (genre/keyword based)
     3. Content-Based ML model (TF-IDF cosine similarity)
-    Results are deduplicated and ranked by a combined quality score.
+    Results are deduplicated, filtered to match the source movie's
+    original language, and ranked with content similarity as the
+    dominant signal (popularity/rating only act as a tiebreaker).
     """
+    # --- Determine source movie's original language first ---
+    source_data = _tmdb_get(f"/movie/{tmdb_id}", {"language": "en-US"})
+    source_language = (source_data or {}).get("original_language")
+
     seen_ids = {tmdb_id}  # exclude the source movie itself
     candidates = {}  # id -> movie_dict with score info
 
     def _add_candidates(results: list, source_bonus: float):
-        """Merge results into candidates with source bonus."""
+        """Merge results into candidates with source bonus.
+
+        Filters out candidates whose original_language does not match
+        the source movie's language, so e.g. a Hindi movie doesn't get
+        polluted with English recommendations just because TMDB's
+        similar/recommendations endpoints return mixed-language results.
+        """
         for rank, m in enumerate(results):
+            # --- Change 1: language filter ---
+            if source_language and m.get("original_language") != source_language:
+                continue
+
             mid = m.get("id")
             if not mid or mid in seen_ids:
                 continue
@@ -93,7 +109,8 @@ def get_recommendations_by_id(tmdb_id: int):
             if not m.get("poster_path"):
                 continue
             seen_ids.add(mid)
-            # Compute quality score:  vote_avg * popularity_factor * source_bonus * rank_decay
+            # Quality score used only as a tiebreaker / fallback signal
+            # (dominant ranking still comes from content similarity where available)
             vote = m.get("vote_average", 0)
             pop = min(m.get("popularity", 10), 500)  # cap popularity
             pop_factor = 1.0 + (pop / 500) * 0.5  # 1.0 to 1.5
@@ -130,8 +147,15 @@ def get_recommendations_by_id(tmdb_id: int):
         cb_results = get_similar_movies(tmdb_id, top_n=15)
         if cb_results:
             db = SessionLocal()
+
             cb_ids = [tid for tid, _ in cb_results]
-            db_movies = db.query(Movie).filter(Movie.tmdb_id.in_(cb_ids)).all()
+
+            # --- Change 2: filter local TF-IDF candidates to source language ---
+            query = db.query(Movie).filter(Movie.tmdb_id.in_(cb_ids))
+            if source_language and hasattr(Movie, "original_language"):
+                query = query.filter(Movie.original_language == source_language)
+            db_movies = query.all()
+
             db_map = {m.tmdb_id: m for m in db_movies}
             db.close()
 
@@ -142,8 +166,9 @@ def get_recommendations_by_id(tmdb_id: int):
                 if not m or not m.poster_path:
                     continue
                 seen_ids.add(tid)
-                # Use similarity score from ML model as a factor
-                score = (m.vote_average or 5) * (1.0 + sim_score) * 0.9
+                # --- Change 3: similarity-first scoring ---
+                # Content similarity dominates; vote_average is a minor tiebreaker.
+                score = sim_score * 10 + (m.vote_average or 5) * 0.1
                 candidates[tid] = {
                     "id": tid,
                     "title": m.title or "",
@@ -165,6 +190,39 @@ def get_recommendations_by_id(tmdb_id: int):
         tv_sim = _tmdb_get(f"/tv/{tmdb_id}/similar", {"language": "en-US", "page": 1})
         if tv_sim and tv_sim.get("results"):
             _add_candidates(tv_sim["results"], source_bonus=0.9)
+
+    # --- Fallback: if language filtering left too few candidates, relax it ---
+    # This avoids returning an empty/near-empty list for movies whose
+    # local dataset or TMDB neighborhood is thin in their language.
+    if len(candidates) < 3 and source_language:
+        logger.debug(
+            "Only %d candidates after language filter for tmdb_id=%s (lang=%s); "
+            "relaxing filter to avoid empty results",
+            len(candidates), tmdb_id, source_language,
+        )
+        if rec_data and rec_data.get("results"):
+            for rank, m in enumerate(rec_data["results"]):
+                mid = m.get("id")
+                if not mid or mid in seen_ids or not m.get("poster_path"):
+                    continue
+                seen_ids.add(mid)
+                vote = m.get("vote_average", 0)
+                pop = min(m.get("popularity", 10), 500)
+                pop_factor = 1.0 + (pop / 500) * 0.5
+                rank_decay = 1.0 / (1.0 + rank * 0.08)
+                # Penalize off-language fallback results so on-language
+                # candidates still rank above them if any exist.
+                score = vote * pop_factor * 1.3 * rank_decay * 0.5
+                candidates[mid] = {
+                    "id": mid,
+                    "title": m.get("title") or m.get("name", ""),
+                    "overview": m.get("overview", ""),
+                    "poster_path": m.get("poster_path"),
+                    "vote_average": vote,
+                    "release_date": m.get("release_date") or m.get("first_air_date", ""),
+                    "media_type": m.get("media_type", "movie"),
+                    "_score": score,
+                }
 
     # --- Rank and return top 10 ---
     sorted_candidates = sorted(candidates.values(), key=lambda x: x["_score"], reverse=True)
