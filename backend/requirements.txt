@@ -29,6 +29,7 @@ numpy>=1.26.0,<3.0
 pandas>=2.2.0,<3.0
 scipy>=1.14.0,<2.0
 joblib>=1.4.0,<2.0
+sentence-transformers>=3.0.0,<4.0
 
 # --- HTTP Client ---
 requests>=2.32.0,<3.0

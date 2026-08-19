@@ -5,7 +5,7 @@ from jose import jwt, JWTError
 from app.database import get_db
 from app.config import SECRET_KEY, ALGORITHM
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/users/login")
 
 def get_current_user(token: str = Security(oauth2_scheme), db: Session = Depends(get_db)):
     from app.models import User  # 🚀 Import inside function to avoid circular import

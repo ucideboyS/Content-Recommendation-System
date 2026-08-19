@@ -74,113 +74,25 @@ def get_recommendations(movie: str = Query(..., description="Enter a movie name"
 @router.get("/by-id/{tmdb_id}")
 def get_recommendations_by_id(tmdb_id: int):
     """
-    Get high-quality recommendations by combining multiple sources:
-    1. TMDB Recommendations (viewing-pattern based)
-    2. TMDB Similar Movies (genre/keyword based)
-    3. Content-Based ML model (TF-IDF cosine similarity)
-    Results are deduplicated and ranked by a combined quality score.
+    Get high-quality recommendations using the live-TMDB TF-IDF engine
+    (see app.ml_model_v2.hybrid_recommender). This delegates entirely to
+    that module rather than running a separate local-DB candidate search —
+    the local `Movie` table only has ~214 rows, which was silently capping
+    what this endpoint could ever recommend regardless of ranking quality.
+    The hybrid_recommender module fetches candidates live from TMDB every
+    request (recommendations + similar + genre discover + language+genre
+    discover + language-only discover), hard-filters to the seed's
+    original_language, and ranks the full pool with TF-IDF + cosine
+    similarity — so it isn't limited to a fixed local dataset and needs no
+    retraining as new movies release.
     """
-    seen_ids = {tmdb_id}  # exclude the source movie itself
-    candidates = {}  # id -> movie_dict with score info
-
-    def _add_candidates(results: list, source_bonus: float):
-        """Merge results into candidates with source bonus."""
-        for rank, m in enumerate(results):
-            mid = m.get("id")
-            if not mid or mid in seen_ids:
-                continue
-            # Skip items without poster
-            if not m.get("poster_path"):
-                continue
-            seen_ids.add(mid)
-            # Compute quality score:  vote_avg * popularity_factor * source_bonus * rank_decay
-            vote = m.get("vote_average", 0)
-            pop = min(m.get("popularity", 10), 500)  # cap popularity
-            pop_factor = 1.0 + (pop / 500) * 0.5  # 1.0 to 1.5
-            rank_decay = 1.0 / (1.0 + rank * 0.08)  # gentle rank decay
-            score = vote * pop_factor * source_bonus * rank_decay
-
-            candidates[mid] = {
-                "id": mid,
-                "title": m.get("title") or m.get("name", ""),
-                "overview": m.get("overview", ""),
-                "poster_path": m.get("poster_path"),
-                "vote_average": vote,
-                "release_date": m.get("release_date") or m.get("first_air_date", ""),
-                "media_type": m.get("media_type", "movie"),
-                "_score": score,
-            }
-
-    # --- Source 1: TMDB Recommendations (best quality, highest bonus) ---
-    rec_data = _tmdb_get(f"/movie/{tmdb_id}/recommendations", {"language": "en-US", "page": 1})
-    if rec_data and rec_data.get("results"):
-        _add_candidates(rec_data["results"], source_bonus=1.3)
-
-    # --- Source 2: TMDB Similar Movies (genre-based, moderate bonus) ---
-    sim_data = _tmdb_get(f"/movie/{tmdb_id}/similar", {"language": "en-US", "page": 1})
-    if sim_data and sim_data.get("results"):
-        _add_candidates(sim_data["results"], source_bonus=1.0)
-
-    # --- Source 3: Content-Based ML Model (if movie is in our DB) ---
     try:
-        from app.ml_model.content_based import get_similar_movies
-        from app.database import SessionLocal
-        from app.models import Movie
-
-        cb_results = get_similar_movies(tmdb_id, top_n=15)
-        if cb_results:
-            db = SessionLocal()
-            cb_ids = [tid for tid, _ in cb_results]
-            db_movies = db.query(Movie).filter(Movie.tmdb_id.in_(cb_ids)).all()
-            db_map = {m.tmdb_id: m for m in db_movies}
-            db.close()
-
-            for tid, sim_score in cb_results:
-                if tid in seen_ids:
-                    continue
-                m = db_map.get(tid)
-                if not m or not m.poster_path:
-                    continue
-                seen_ids.add(tid)
-                # Use similarity score from ML model as a factor
-                score = (m.vote_average or 5) * (1.0 + sim_score) * 0.9
-                candidates[tid] = {
-                    "id": tid,
-                    "title": m.title or "",
-                    "overview": m.overview or "",
-                    "poster_path": m.poster_path,
-                    "vote_average": m.vote_average or 0,
-                    "release_date": m.release_date or "",
-                    "media_type": m.media_type or "movie",
-                    "_score": score,
-                }
+        from app.ml_model_v2.hybrid_recommender import recommend_by_id as tfidf_recommend_by_id
+        result = tfidf_recommend_by_id(tmdb_id, top_n=10)
+        return {"recommendations": result.get("recommendations", [])}
     except Exception as e:
-        logger.debug("Content-based model skipped: %s", e)
-
-    # --- Source 4: TV fallback (if no movie results, try as TV show) ---
-    if len(candidates) < 3:
-        tv_rec = _tmdb_get(f"/tv/{tmdb_id}/recommendations", {"language": "en-US", "page": 1})
-        if tv_rec and tv_rec.get("results"):
-            _add_candidates(tv_rec["results"], source_bonus=1.2)
-        tv_sim = _tmdb_get(f"/tv/{tmdb_id}/similar", {"language": "en-US", "page": 1})
-        if tv_sim and tv_sim.get("results"):
-            _add_candidates(tv_sim["results"], source_bonus=0.9)
-
-    # --- Rank and return top 10 ---
-    sorted_candidates = sorted(candidates.values(), key=lambda x: x["_score"], reverse=True)
-
-    recommendations = []
-    for m in sorted_candidates[:10]:
-        recommendations.append({
-            "id": m["id"],
-            "title": m["title"],
-            "overview": m["overview"],
-            "poster_path": m["poster_path"],
-            "vote_average": m["vote_average"],
-            "release_date": m["release_date"],
-        })
-
-    return {"recommendations": recommendations}
+        logger.error("TF-IDF hybrid_recommender failed for tmdb_id=%s: %s", tmdb_id, e)
+        raise HTTPException(status_code=500, detail="Recommendation engine error")
 
 
 # ============================================================================
