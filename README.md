@@ -2,7 +2,7 @@
 
 A full-stack movie and TV content recommendation application built with **Next.js**, **FastAPI**, **PostgreSQL**, **SQLAlchemy**, **Alembic**, and the **TMDB API**.
 
-This README describes the implementation currently present in the repository. Older recommendation/model code may still exist in the backend, but it is not presented as the primary recommendation architecture unless the current route uses it.
+The application provides personalized movie and TV recommendations using user preferences, ratings, and content-based similarity, along with search, mood-based discovery, watch history, and wishlist features.
 
 ## 🚀 Live Demo
 
