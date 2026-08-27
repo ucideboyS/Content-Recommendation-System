@@ -1,397 +1,193 @@
 # 🎬 Content Recommendation System
 
-A full-stack movie and TV content recommendation application built with **Next.js**, **FastAPI**, **PostgreSQL**, **SQLAlchemy**, **Alembic**, and the **TMDB API**.
+A modern, full-stack movie and TV content recommendation platform built with **Next.js**, **FastAPI**, **PostgreSQL**, **SQLAlchemy**, and the **TMDB API**.
 
-The application provides personalized movie and TV recommendations using user preferences, ratings, and content-based similarity, along with search, mood-based discovery, watch history, and wishlist features.
+The application provides a seamless streaming-style interface (similar to Netflix) while powering personalized, high-quality movie and TV/web-series recommendations through an advanced Machine Learning backend using **TF-IDF**, **Sentence Transformers**, and **XGBoost**.
 
 ## 🚀 Live Demo
 
 **Deployed application:**
-
 https://content-recommendation-system-gold.vercel.app/
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- User registration and login
-- JWT-based authentication
-- User preferences
-- Movie and TV content browsing
-- TMDB-based search and content data
-- Movie detail pages
-- Movie recommendations
-- Personalized recommendation endpoint for authenticated users
-- Mood-based recommendations
-- Cold-start recommendations
-- Ratings
-- Watch history
-- Wishlist
-- AI-related backend endpoints
+- **Advanced Personalized Recommendations:** Integrates your explicit profile preferences (genres, content type, languages, favorite actors/directors) and watch history to generate deeply personalized content feeds.
+- **Strict Media Type Separation:** Fully supports both Movies and TV Shows natively, providing distinct sections for Indian Web Series, Indian Movies, and mixed-type carousels based on user preference.
+- **Robust OTT Content Filtering:** A custom validation layer automatically identifies and rejects low-quality broadcast television, reality shows, and daily soaps, ensuring only legitimate OTT web series and high-quality movies reach your feed.
+- **Dynamic Hybrid Recommendation Engine:** Uses a custom ML pipeline (`TF-IDF` + `Sentence Transformers` + `XGBoost`) to generate highly relevant, semantic recommendations from a single seed movie or TV show.
+- **User Profiles & History:** Save preferences, build a watch history, maintain a wishlist, and rate your favorite titles.
+- **Interactive Browsing:** Fast, dynamic carousels with global deduplication, intelligent fallback logic, and a mood-based discovery engine.
+- **Secure Authentication:** JWT-based user registration and login.
 
 ---
 
 ## 🛠️ Tech Stack
 
 ### Frontend
-
-- Next.js
+- Next.js (App Router)
 - React
 - Tailwind CSS
-- Zustand
+- Zustand (State Management)
 - Axios
-- Lottie
 
 ### Backend
-
-- Python
-- FastAPI
-- Uvicorn
-- SQLAlchemy
-- Alembic
+- Python 3.11+
+- FastAPI & Uvicorn
+- SQLAlchemy & Alembic (ORM & Migrations)
 - PostgreSQL
 - JWT authentication
 
-### Recommendation / ML Libraries
-
+### Recommendation & ML Libraries
 - Scikit-learn
-- NumPy
-- Pandas
-- SciPy
-- Joblib
-- Sentence Transformers
+- XGBoost
+- Sentence Transformers (HuggingFace)
+- NumPy & Pandas
 
 ### External Services
-
-- TMDB API
-- OpenAI API integration in the backend
+- TMDB API (Real-time content catalog and metadata)
 
 ---
 
-# 🧠 Recommendation System
+## 🧠 Recommendation System Architecture
 
-The repository contains multiple recommendation paths. The main distinction is between the current movie-by-ID engine and older/other recommendation code that remains in the backend.
+The core of the platform is driven by a sophisticated backend recommendation engine (`backend/app/ml_model_v2/hybrid_recommender.py`) that operates without relying on stale, static datasets.
 
-## 1. Movie-by-ID Recommendations
+### 1. Hybrid ML Recommendation Pipeline (`/api/recommend/by-id/{tmdb_id}`)
+When a user requests recommendations for a specific title (Movie or TV):
+1. **Seed Processing:** The system fetches live metadata, credits, and keywords from TMDB, dynamically detecting if the seed is a Movie or a TV show.
+2. **Candidate Generation:** It builds a massive candidate pool by querying TMDB recommendations, similar titles, shared genres, and shared cast/crew.
+3. **TF-IDF Vectorization:** The system extracts plots, genres, and keywords, fitting a fresh `TfidfVectorizer` against the candidate pool.
+4. **Semantic Embedding:** It generates deep sentence embeddings using Sentence Transformers to capture thematic similarities that keyword-matching misses.
+5. **XGBoost Ranking:** An XGBoost ranker combines the TF-IDF score, Semantic score, TMDB popularity, and vote averages into a final personalized hybrid score.
 
-Endpoint:
-
-```text
-GET /api/recommend/by-id/{tmdb_id}
-```
-
-The current implementation is located in:
-
-```text
-backend/app/ml_model_v2/hybrid_recommender.py
-```
-
-### Flow
-
-```text
-TMDB movie ID
-      ↓
-Fetch seed movie from TMDB
-      ↓
-Generate candidates from TMDB
-      ↓
-Filter candidates by original language
-      ↓
-Build text features
-      ↓
-TF-IDF vectorization
-      ↓
-Cosine similarity
-      ↓
-Rank candidates
-      ↓
-Return Top-N recommendations
-```
-
-### Candidate generation
-
-The current implementation obtains candidates from TMDB using several sources, including:
-
-- TMDB recommendations
-- TMDB similar movies
-- Genre-based discovery
-- Language + genre discovery
-- Language-based discovery
-
-### Language filtering
-
-The seed movie's `original_language` is used to filter the candidate pool before similarity ranking.
-
-### TF-IDF and cosine similarity
-
-The current movie-by-ID implementation creates text representations from the available movie metadata and fits a `TfidfVectorizer` on the seed movie and candidate pool for that request.
-
-Cosine similarity is then calculated between the seed movie vector and candidate vectors. Candidates are sorted by similarity and the requested number of results is returned.
-
-### Important
-
-The current `/api/recommend/by-id/{tmdb_id}` implementation gets its candidate content from TMDB at request time. It is **not documented here as a recommendation system trained only on the old 214-movie dataset** and it does **not require `content_based.pkl` for this endpoint**.
+### 2. Personalized "Recommended For You" (`/api/users/recommendations`)
+For authenticated users, the system checks the PostgreSQL database for their most recently watched title (`History`).
+- **If History exists:** It feeds that title into the Hybrid ML pipeline while injecting the user's explicit profile preferences (e.g., boosting favorite directors or strictly filtering out unwanted languages).
+- **Cold Start:** If no history exists, it constructs a highly targeted TMDB discovery query that perfectly maps to the user's saved `preferred_content_type`, `favorite_genres`, and regional languages, applying the strict OTT validation layer before returning results.
 
 ---
 
-## 2. Personalized Recommendations
-
-Endpoint:
+## 🏗️ Project Structure
 
 ```text
-GET /api/recommend/hybrid
-```
-
-The authenticated recommendation flow is implemented in:
-
-```text
-backend/app/services/hybrid_service.py
-```
-
-The current service:
-
-1. Reads the user's ratings.
-2. Selects the highest-rated movie when a suitable rating exists.
-3. Uses that movie's TMDB ID as the seed for the `ml_model_v2` recommendation engine.
-4. Excludes movies already rated by the user.
-5. Returns the resulting recommendations.
-
-For users without a suitable rating history, the service falls back to TMDB discovery using the user's favorite genres.
-
----
-
-## 3. Mood Recommendations
-
-Endpoint:
-
-```text
-GET /api/recommend/mood/{mood}
-```
-
-The route supports:
-
-```text
-happy
-sad
-tense
-nostalgic
-adventurous
-romantic
-thoughtful
-```
-
-The route attempts to use the existing Naive Bayes mood recommendation implementation. If that path does not return usable results, it falls back to TMDB genre-based discovery.
-
-This is separate from the current TF-IDF movie-by-ID recommendation flow.
-
----
-
-## 4. Cold-Start Recommendations
-
-Endpoint:
-
-```text
-GET /api/recommend/cold-start
-```
-
-For users without recommendation history, the endpoint can use saved favorite genres and TMDB discovery to generate content.
-
----
-
-# 🏗️ Application Architecture
-
-```text
-┌──────────────────────────────┐
-│       Next.js Frontend       │
-│ Browse • Search • Details    │
-│ Ratings • Wishlist • Profile │
-└──────────────┬───────────────┘
-               │ REST API
-               ▼
-┌──────────────────────────────┐
-│       FastAPI Backend        │
-│ Auth • Recommendations       │
-│ Mood • AI • Wishlist • Users │
-└──────────┬───────────┬───────┘
-           │           │
-           ▼           ▼
-     PostgreSQL       TMDB API
-     SQLAlchemy       Live content
-     + Alembic
+content-recommendation-system/
+├── frontend/                     # Next.js Application
+│   ├── src/
+│   │   ├── app/                  # App Router pages (Browse, Profile, Details)
+│   │   ├── components/           # Reusable UI components (Carousels, Nav)
+│   │   └── store/                # Zustand state (Auth)
+│   └── package.json
+│
+├── backend/                      # FastAPI Application
+│   ├── app/
+│   │   ├── ml_model_v2/          # Core Hybrid Recommender (TF-IDF, XGBoost)
+│   │   ├── routes/               # API Endpoints (user.py, recommend.py)
+│   │   ├── models.py             # SQLAlchemy Database Models
+│   │   ├── schemas.py            # Pydantic Validation Schemas
+│   │   └── main.py               # FastAPI Entrypoint
+│   ├── alembic/                  # Database Migrations
+│   └── requirements.txt
 ```
 
 ---
 
-# 📁 Important Backend Structure
-
-```text
-backend/
-├── app/
-│   ├── routes/
-│   │   └── recommend.py
-│   ├── services/
-│   │   └── hybrid_service.py
-│   ├── ml_model/
-│   │   └── naive_bayes_model.py
-│   ├── ml_model_v2/
-│   │   └── hybrid_recommender.py
-│   ├── models/
-│   ├── schemas/
-│   └── ...
-├── alembic/
-├── requirements.txt
-└── ...
-```
-
-### `routes/recommend.py`
-
-Defines the recommendation API routes and connects them to the relevant recommendation implementations.
-
-### `ml_model_v2/hybrid_recommender.py`
-
-Contains the current movie-by-ID recommendation implementation using TMDB candidate retrieval, language filtering, TF-IDF, and cosine similarity.
-
-### `services/hybrid_service.py`
-
-Handles the authenticated recommendation flow and the cold-start fallback.
-
-### `ml_model/naive_bayes_model.py`
-
-Contains the Naive Bayes implementation used by the mood recommendation path.
-
-### `alembic/`
-
-Contains database migration configuration and migration history used to update the PostgreSQL schema.
-
----
-
-# 🗄️ Database
-
-The backend uses **PostgreSQL** with **SQLAlchemy**.
-
-**Alembic** is used for database migrations.
-
-The database is used for application data such as users, ratings, history, wishlist information, preferences, and movie records used by the backend.
-
-TMDB is used as the external source for movie and TV metadata.
-
----
-
-# 📡 Main Recommendation API Endpoints
+## 📡 Key Backend API Endpoints
 
 | Method | Endpoint | Description |
 |---|---|---|
-| GET | `/api/recommend?movie={name}` | TMDB-based movie recommendation/search flow |
-| GET | `/api/recommend/by-id/{tmdb_id}` | Current TF-IDF + cosine similarity recommendation engine |
-| GET | `/api/recommend/hybrid` | Authenticated personalized recommendation flow |
-| GET | `/api/recommend/mood/{mood}` | Mood-based recommendation flow |
-| GET | `/api/recommend/cold-start` | Cold-start recommendation flow |
+| `POST` | `/api/users/register` | Register a new user |
+| `POST` | `/api/users/login` | Authenticate and retrieve JWT |
+| `GET`  | `/api/users/recommendations` | Get highly personalized recommendations based on profile/history |
+| `POST` | `/api/users/history` | Save a Movie or TV show to user's watch history |
+| `PUT`  | `/api/users/preferences` | Update explicit user content preferences |
+| `GET`  | `/api/recommend/by-id/{tmdb_id}`| Generate semantic hybrid recommendations for a specific title |
 
 ---
 
-# 🔐 Authentication
+## 💻 Local Setup & Installation
 
-The backend implements JWT-based authentication for user-specific functionality.
+### Prerequisites
+- Node.js (v18+)
+- Python (3.11+)
+- PostgreSQL installed and running
 
-User-related functionality includes registration, login, preferences, ratings, history, and wishlist data.
-
----
-
-# 💻 Local Setup
-
-## 1. Clone the repository
-
+### 1. Clone the repository
 ```bash
 git clone https://github.com/ucideboyS/Content-Recommendation-System.git
 cd Content-Recommendation-System
 ```
 
-## 2. Backend
-
+### 2. Backend Setup
+Navigate to the backend directory and create a virtual environment:
 ```bash
 cd backend
 python -m venv venv
 ```
 
-### Windows PowerShell
+**Activate the virtual environment:**
+- Windows: `venv\Scripts\activate`
+- Mac/Linux: `source venv/bin/activate`
 
-```powershell
-venv\Scripts\activate
-```
-
-Install dependencies:
-
+**Install dependencies:**
 ```bash
 pip install -r requirements.txt
 ```
 
-Create the required backend environment variables, including the PostgreSQL connection string, TMDB API key, and authentication configuration.
-
-Example:
-
+**Environment Variables:**
+Create a `.env` file in the `backend/` directory. **Never commit this file to version control.**
 ```env
-DATABASE_URL=your_postgresql_connection_string
-TMDB_API_KEY=your_tmdb_api_key
-SECRET_KEY=your_secret_key
+DATABASE_URL=postgresql://user:password@localhost:5432/your_db_name
+TMDB_API_KEY=your_tmdb_api_key_here
+SECRET_KEY=your_secure_jwt_secret_here
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 ```
 
-Run migrations:
-
+**Run Database Migrations:**
 ```bash
 alembic upgrade head
 ```
 
-Start FastAPI:
-
+**Start the FastAPI Server:**
 ```bash
-uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload
 ```
+*The backend will be available at http://localhost:8000*
 
-## 3. Frontend
-
-Open another terminal:
-
+### 3. Frontend Setup
+Open a new terminal and navigate to the frontend directory:
 ```bash
 cd frontend
 npm install
-npm run dev
 ```
 
-Configure the frontend API URL according to the project's frontend environment configuration.
+**Environment Variables:**
+Create a `.env.local` file in the `frontend/` directory.
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_TMDB_API_KEY=your_tmdb_api_key_here
+```
+
+**Start the Next.js Development Server:**
+```bash
+npm run dev
+```
+*The frontend will be available at http://localhost:3000*
 
 ---
 
-# ⚠️ Legacy / Additional Code
-
-The repository contains older recommendation/model code in addition to the newer `ml_model_v2` implementation.
-
-This README intentionally does not describe the old persisted-model architecture as the current movie-by-ID algorithm.
-
-In particular, the old claims about a fixed 214-movie `content_based.pkl` model, Random Forest personalization, and a single combined scoring formula are not used here as the description of the current `/api/recommend/by-id/{tmdb_id}` implementation.
-
----
-
-# 🔮 Future Improvements
-
-Possible future improvements include:
-
-- More user-personalization signals
-- Recommendation evaluation metrics
-- Better multilingual semantic representations
-- Recommendation explanations
-- More extensive TV recommendation support
+## 🔒 Security & Configuration
+- **Secrets Management:** All API keys, database credentials, and JWT secrets must be stored securely in `.env` files. Ensure `.env` is listed in your `.gitignore` to prevent accidental exposure to Git.
+- **Authentication:** All personalized endpoints (`/api/users/*`) require a valid JWT Bearer token.
 
 ---
 
 ## 👨‍💻 Author
 
-**Sahil Jakhariya**
-
-GitHub: https://github.com/ucideboyS
-
----
+**Sahil Jakhariya**  
+GitHub: [ucideboyS](https://github.com/ucideboyS)
 
 ## 📄 License
 
