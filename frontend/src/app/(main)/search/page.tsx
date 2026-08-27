@@ -50,13 +50,21 @@ export default function SearchPage() {
         try {
             if (smartSearch && token) {
                 // AI-powered search
-                const resp = await axios.post(
-                    `${API_URL}/api/ai/smart-search`,
-                    { query: q },
-                    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
-                );
-                setResults(resp.data?.results || []);
-                setParsedFilters(resp.data?.parsed_filters || null);
+                try {
+                    const resp = await axios.post(
+                        `${API_URL}/api/ai/smart-search`,
+                        { query: q },
+                        { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+                    );
+                    setResults(resp.data?.results || []);
+                    setParsedFilters(resp.data?.parsed_filters || null);
+                } catch (err: any) {
+                    if (err.response?.status === 401) {
+                        useAuthStore.getState().clearAuth();
+                    } else {
+                        throw err;
+                    }
+                }
             } else {
                 // Always use multi-search for best results (returns media_type)
                 const multiResp = await axios.get(

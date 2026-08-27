@@ -51,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
           // Clear all state and storage
           set({ token: null, user: null, isInitialized: true });
           localStorage.removeItem('auth-storage');
+          localStorage.removeItem('token'); // Clear legacy token key
           sessionStorage.clear();
           
           // Clear cookies

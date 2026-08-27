@@ -42,6 +42,11 @@ const MOODS = [
     { key: 'thoughtful', emoji: '🧠', label: 'Thoughtful', color: '#8b5cf6' },
 ];
 
+const LANGUAGES_MAP: Record<string, string> = {
+    'hi': 'Hindi', 'en': 'English', 'mr': 'Marathi', 'ta': 'Tamil', 'te': 'Telugu',
+    'ml': 'Malayalam', 'kn': 'Kannada', 'bn': 'Bengali', 'pa': 'Punjabi', 'gu': 'Gujarati'
+};
+
 const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -107,8 +112,12 @@ export default function HomePage() {
     const [popularMovies, setPopularMovies] = useState<Movie[]>([]);
     const [topRated, setTopRated] = useState<Movie[]>([]);
     const [tvSeries, setTvSeries] = useState<Movie[]>([]);
-    const [hindiMovies, setHindiMovies] = useState<Movie[]>([]);
+    const [indianMovies, setIndianMovies] = useState<Movie[]>([]);
+    const [indianWebSeries, setIndianWebSeries] = useState<Movie[]>([]);
+    const [userLangMovies, setUserLangMovies] = useState<Movie[]>([]);
+    const [personalizedRecs, setPersonalizedRecs] = useState<Movie[]>([]);
     const [heroMovie, setHeroMovie] = useState<Movie | null>(null);
+    const [preferredLanguage, setPreferredLanguage] = useState<string | null>(null);
     const [loading, setLoading] = useState(true);
 
     // Mood
@@ -127,67 +136,151 @@ export default function HomePage() {
         const fetchAll = async () => {
             setLoading(true);
             try {
-                const [trendRes, popRes, topRes, tvRes, hindiRes] = await Promise.all([
-                    axios.get(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}&language=en-US&page=1`),
-                    axios.get(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&language=en-US&page=1`),
-                    axios.get(`https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}&language=en-US&page=1`),
-                    axios.get(`https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_KEY}&language=en-US&page=1`),
-                    axios.get(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_original_language=hi&sort_by=popularity.desc&vote_count.gte=50&page=1`),
-                ]);
+                // Fetch profile to get language if token exists
+                let prefLang = null;
+                let prefType = 'both';
+                if (token) {
+                    try {
+                        const [profileRes, recsRes] = await Promise.all([
+                            axios.get(`${API_URL}/api/users/profile`, { headers: { Authorization: `Bearer ${token}` } }),
+                            axios.get(`${API_URL}/api/users/recommendations`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => ({ data: { recommendations: [] } }))
+                        ]);
+                        prefLang = profileRes.data.preferred_language || null;
+                        prefType = profileRes.data.preferred_content_type?.toLowerCase() || 'both';
+                        setPreferredLanguage(prefLang);
+                        setPersonalizedRecs(recsRes.data.recommendations || []);
+                    } catch (e) {
+                        console.error('Failed to fetch profile/recs', e);
+                    }
+                }
 
-                // Kids genre IDs — filter these from main carousels (they have their own section)
-                const KIDS_GENRE_IDS = [10751]; // Family
-                const isNotKids = (m: Movie) => {
-                    const genres = m.genre_ids || [];
-                    return !genres.some(g => KIDS_GENRE_IDS.includes(g));
+                const fetchWidePool = async (url: string) => {
+                    try {
+                        const [p1, p2] = await Promise.all([
+                            axios.get(`${url}&page=1`),
+                            axios.get(`${url}&page=2`)
+                        ]);
+                        return [...(p1.data.results || []), ...(p2.data.results || [])];
+                    } catch {
+                        return [];
+                    }
                 };
 
-                // Sort helpers
-                const byPopularity = (a: Movie & { popularity?: number }, b: Movie & { popularity?: number }) =>
-                    (b.popularity || 0) - (a.popularity || 0);
-                const byRating = (a: Movie, b: Movie) =>
-                    (b.vote_average || 0) - (a.vote_average || 0);
+                const indianLangs = 'hi|ta|te|ml|kn|mr|bn|pa|gu';
+                const ottNetworks = '213|119|3919|2739|1523|2590|3353|2112|2822|2063|2552';
+                const [
+                    trendData, popMovieData, tvData, indMovieData, indTvData, topData, langData, langTvData
+                ] = await Promise.all([
+                    fetchWidePool(`https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_KEY}&language=en-US`),
+                    fetchWidePool(`https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_KEY}&language=en-US`),
+                    fetchWidePool(`https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_KEY}&language=en-US`),
+                    fetchWidePool(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_original_language=${indianLangs}&origin_country=IN&sort_by=popularity.desc&vote_count.gte=50&vote_average.gte=5.5`),
+                    fetchWidePool(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&with_original_language=${indianLangs}&origin_country=IN&sort_by=popularity.desc&vote_count.gte=20&with_networks=${ottNetworks}`),
+                    fetchWidePool(`https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_KEY}&language=en-US&vote_count.gte=1000`),
+                    (prefLang && (prefType === 'movie' || prefType === 'both')) ? fetchWidePool(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_original_language=${prefLang}&sort_by=popularity.desc&vote_count.gte=30`) : Promise.resolve([]),
+                    (prefLang && (prefType === 'tv' || prefType === 'both')) ? fetchWidePool(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&with_original_language=${prefLang}&sort_by=popularity.desc&vote_count.gte=30&with_networks=${ottNetworks}`) : Promise.resolve([]),
+                ]);
 
-                // Trending — sorted by popularity (already trending, but ensure order)
-                const trending = (trendRes.data.results || [])
-                    .map((m: Movie) => ({ ...m, media_type: m.media_type || 'movie' }))
-                    .filter(isNotKids)
-                    .sort(byPopularity);
-                setTrendingMovies(trending);
+                const validateCandidate = (m: any, expectedType: 'movie' | 'tv', label: string) => {
+                    const mType = m.media_type || (m.first_air_date ? 'tv' : 'movie');
+                    const title = (m.name || m.title || m.original_name || '').toLowerCase();
+                    const overview = (m.overview || '').toLowerCase();
+                    const genres = m.genre_ids || [];
 
-                // Popular — sorted by popularity
-                setPopularMovies((popRes.data.results || [])
-                    .map((m: Movie) => ({ ...m, media_type: 'movie' }))
-                    .filter(isNotKids)
-                    .sort(byPopularity));
+                    if (mType !== expectedType) return false;
+                    if (!m.poster_path) return false;
 
-                // Top Rated — sorted by rating (highest first)
-                setTopRated((topRes.data.results || [])
-                    .map((m: Movie) => ({ ...m, media_type: 'movie' }))
-                    .filter(isNotKids)
-                    .sort(byRating));
+                    // Reject Kids & Docs
+                    const KIDS_DOCS = [10751, 10762, 99];
+                    if (genres.some((g: number) => KIDS_DOCS.includes(g))) {
+                        console.log(`[Diagnostic - ${label}] ${title} -> rejected: kids/documentary genre`);
+                        return false;
+                    }
 
-                // TV Series — sorted by popularity, filter kids
-                const tvData = (tvRes.data.results || [])
-                    .map((t: Movie) => ({
-                        ...t,
-                        title: t.name || t.title,
-                        release_date: t.first_air_date,
-                        media_type: 'tv',
-                    }))
-                    .filter(isNotKids)
-                    .sort(byPopularity);
-                setTvSeries(tvData);
+                    if (expectedType === 'tv') {
+                        // Reject broadcast TV garbage
+                        const TV_JUNK_GENRES = [10766, 10767, 10763, 10764]; // Soap, Talk, News, Reality
+                        if (genres.some((g: number) => TV_JUNK_GENRES.includes(g))) {
+                            console.log(`[Diagnostic - ${label}] ${title} -> rejected: broadcast/soap/news TV genre`);
+                            return false;
+                        }
 
-                // Hindi Movies — sorted by popularity
-                setHindiMovies((hindiRes.data.results || [])
-                    .map((m: Movie) => ({ ...m, media_type: 'movie' }))
-                    .filter(isNotKids)
-                    .sort(byPopularity));
+                        // Reject via Title / Overview signatures
+                        const junkRegex = /\b(cid|kapil sharma|reality show|talk show|news|titlie|faltu|anupamaa|bigg boss|taarak mehta|yeh rishta|kundali|kumkum|kullu|ullu|uncensored|xxx)\b/i;
+                        if (junkRegex.test(title) || junkRegex.test(overview)) {
+                            console.log(`[Diagnostic - ${label}] ${title} -> rejected: inappropriate/broadcast content signature`);
+                            return false;
+                        }
+                    }
 
-                // Pick hero from trending (non-kids)
-                const heroCandidate = trending.find((m: Movie) => m.backdrop_path && m.overview);
-                setHeroMovie(heroCandidate || trending[0] || null);
+                    console.log(`[Diagnostic - ${label}] ${title} -> accepted: ${expectedType === 'tv' ? 'OTT scripted series' : 'movie'}`);
+                    return true;
+                };
+
+                const normalizeMovie = (m: any, type: string): Movie => ({
+                    ...m,
+                    title: m.name || m.title,
+                    release_date: m.first_air_date || m.release_date,
+                    media_type: m.media_type || type,
+                });
+
+                const byPopularity = (a: any, b: any) => (b.popularity || 0) - (a.popularity || 0);
+                const byRating = (a: any, b: any) => (b.vote_average || 0) - (a.vote_average || 0);
+
+                const allTrend = trendData.filter(m => validateCandidate(m, 'movie', 'Trending')).map(m => normalizeMovie(m, 'movie')).sort(byPopularity);
+                const allPopMovie = popMovieData.filter(m => validateCandidate(m, 'movie', 'Popular')).map(m => normalizeMovie(m, 'movie')).sort(byPopularity);
+                const allTv = tvData.filter(m => validateCandidate(m, 'tv', 'Popular TV')).map(m => normalizeMovie(m, 'tv')).sort(byPopularity);
+                const allIndMovie = indMovieData.filter(m => validateCandidate(m, 'movie', 'Indian Movies')).map(m => normalizeMovie(m, 'movie')).sort(byPopularity);
+                const allIndTv = indTvData.filter(m => validateCandidate(m, 'tv', 'Indian Web Series')).map(m => normalizeMovie(m, 'tv')).sort(byPopularity);
+                const allTop = topData.filter(m => validateCandidate(m, 'movie', 'Top Rated')).map(m => normalizeMovie(m, 'movie')).sort(byRating);
+                
+                const combinedLang = [
+                    ...langData.filter(m => validateCandidate(m, 'movie', 'Lang Movie')).map(m => normalizeMovie(m, 'movie')), 
+                    ...langTvData.filter(m => validateCandidate(m, 'tv', 'Lang TV')).map(m => normalizeMovie(m, 'tv'))
+                ].sort(byPopularity);
+
+                // Global Deduplication System
+                const seenIds = new Set<number>();
+                
+                const deduplicate = (movies: Movie[], targetLimit: number = 15) => {
+                    const unique: Movie[] = [];
+                    
+                    for (const m of movies) {
+                        // Skip items without posters since they break UI layout
+                        if (!m.poster_path) continue;
+                        
+                        if (!seenIds.has(m.id)) {
+                            unique.push(m);
+                            seenIds.add(m.id);
+                        }
+                    }
+                    
+                    // Do NOT fallback to duplicates just to reach a card count as per requirements
+                    
+                    return unique.slice(0, targetLimit);
+                };
+
+                // Deduplicate in priority order
+                const finalTrend = deduplicate(allTrend);
+                const finalPop = deduplicate(allPopMovie);
+                const finalTv = deduplicate(allTv);
+                const finalIndMovie = deduplicate(allIndMovie);
+                const finalIndTv = deduplicate(allIndTv);
+                const finalTop = deduplicate(allTop);
+                const finalLang = deduplicate(combinedLang);
+
+                setTrendingMovies(finalTrend);
+                setPopularMovies(finalPop);
+                setTvSeries(finalTv);
+                setIndianMovies(finalIndMovie);
+                setIndianWebSeries(finalIndTv);
+                setTopRated(finalTop);
+                setUserLangMovies(finalLang);
+
+                // Pick hero from trending
+                const heroCandidate = finalTrend.find((m: Movie) => m.backdrop_path && m.overview);
+                setHeroMovie(heroCandidate || finalTrend[0] || null);
+
             } catch (err) {
                 console.error('Failed to fetch movies:', err);
             } finally {
@@ -196,7 +289,7 @@ export default function HomePage() {
         };
 
         fetchAll();
-    }, [isInitialized]);
+    }, [isInitialized, token]);
 
     // ---------------------------------------------------------------
     // Mood handler
@@ -293,7 +386,7 @@ export default function HomePage() {
             {/* ============================================================
                 CONTENT AREA
                 ============================================================ */}
-            <div className="px-6 lg:px-8 -mt-4">
+            <div className="px-6 lg:px-8 relative z-10 -mt-8">
 
                 {/* MOOD SELECTOR */}
                 <section className="mb-8">
@@ -353,11 +446,23 @@ export default function HomePage() {
                 </section>
 
                 {/* CAROUSELS */}
+                {personalizedRecs && personalizedRecs.length > 0 && (
+                    <Carousel title="Recommended For You" icon="🎯" movies={personalizedRecs} onMovieClick={navigateToMovie} />
+                )}
                 <Carousel title="Trending Now" icon="🔥" movies={trendingMovies} onMovieClick={navigateToMovie} />
                 <Carousel title="Popular Movies" icon="🎬" movies={popularMovies} onMovieClick={navigateToMovie} />
                 <Carousel title="Popular TV Series" icon="📺" movies={tvSeries} onMovieClick={navigateToMovie} />
-                <Carousel title="Hindi Movies" icon="🇮🇳" movies={hindiMovies} onMovieClick={navigateToMovie} />
+                <Carousel title="Indian Movies" icon="🇮🇳" movies={indianMovies} onMovieClick={navigateToMovie} />
+                <Carousel title="Indian Web Series" icon="🍿" movies={indianWebSeries} onMovieClick={navigateToMovie} />
                 <Carousel title="Top Rated" icon="⭐" movies={topRated} onMovieClick={navigateToMovie} />
+                {preferredLanguage && LANGUAGES_MAP[preferredLanguage] && (
+                    <Carousel 
+                        title={`Because You Prefer ${LANGUAGES_MAP[preferredLanguage]}`} 
+                        icon="🗣️" 
+                        movies={userLangMovies} 
+                        onMovieClick={navigateToMovie} 
+                    />
+                )}
             </div>
         </div>
     );

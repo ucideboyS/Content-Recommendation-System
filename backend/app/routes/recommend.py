@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, History, Movie
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_optional_user
 from app.http_client import safe_get
 import os
 import logging
@@ -72,27 +72,43 @@ def get_recommendations(movie: str = Query(..., description="Enter a movie name"
 
 
 @router.get("/by-id/{tmdb_id}")
-def get_recommendations_by_id(tmdb_id: int):
+def get_recommendations_by_id(
+    tmdb_id: int, 
+    user: User = Depends(get_optional_user),
+    db: Session = Depends(get_db)
+):
     """
-    Get high-quality recommendations using the live-TMDB TF-IDF engine
-    (see app.ml_model_v2.hybrid_recommender). This delegates entirely to
-    that module rather than running a separate local-DB candidate search —
-    the local `Movie` table only has ~214 rows, which was silently capping
-    what this endpoint could ever recommend regardless of ranking quality.
-    The hybrid_recommender module fetches candidates live from TMDB every
-    request (recommendations + similar + genre discover + language+genre
-    discover + language-only discover), hard-filters to the seed's
-    original_language, and ranks the full pool with TF-IDF + cosine
-    similarity — so it isn't limited to a fixed local dataset and needs no
-    retraining as new movies release.
+    Get high-quality recommendations using the live-TMDB hybrid TF-IDF +
+    Sentence-Transformer + Bayesian ranking engine.
+    Auth is NOT required — this endpoint is public.
     """
+    import time
+    import traceback
+
+    t_start = time.time()
+    logger.info("[RECOMMEND] START  tmdb_id=%s user_id=%s", tmdb_id, user.id if user else None)
+
     try:
-        from app.ml_model_v2.hybrid_recommender import recommend_by_id as tfidf_recommend_by_id
-        result = tfidf_recommend_by_id(tmdb_id, top_n=10)
-        return {"recommendations": result.get("recommendations", [])}
+        from app.ml_model_v2.hybrid_recommender import recommend_by_id as hybrid_recommend
+
+        user_id = user.id if user else None
+        result = hybrid_recommend(tmdb_id, top_n=5, user_id=user_id, db=db)
+        recs = result.get("recommendations", [])
+
+        t_total = time.time() - t_start
+        logger.info(
+            "[RECOMMEND] DONE   tmdb_id=%s  candidates=%d  strategy=%s  latency=%.2fs",
+            tmdb_id, len(recs), result.get('strategy', 'unknown'), t_total,
+        )
+        return {"recommendations": recs}
+
     except Exception as e:
-        logger.error("TF-IDF hybrid_recommender failed for tmdb_id=%s: %s", tmdb_id, e)
-        raise HTTPException(status_code=500, detail="Recommendation engine error")
+        t_total = time.time() - t_start
+        logger.error(
+            "[RECOMMEND] FAIL   tmdb_id=%s  latency=%.2fs  error=%s\n%s",
+            tmdb_id, t_total, e, traceback.format_exc(),
+        )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================

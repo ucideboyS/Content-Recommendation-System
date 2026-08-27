@@ -24,3 +24,7 @@ if not TMDB_API_KEY:
 
 # GitHub Models / LLM Configuration (optional — AI features degrade gracefully)
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+
+# XGBoost Configuration
+XGBOOST_MODEL_PATH = os.path.join(os.path.dirname(__file__), "ml_model_v2", "xgboost_model.json")
+XGBOOST_WEIGHT = float(os.getenv("XGBOOST_WEIGHT", "0.7"))

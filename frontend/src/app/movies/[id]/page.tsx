@@ -115,8 +115,15 @@ export default function MovieDetailsPage() {
             await axios.post(`${API_URL}/api/users/history`, { tmdb_movie_id: tmdbId }, {
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }
             });
-        } catch (err) {
+        } catch (err: any) {
             console.error('Error storing history:', err);
+            if (err.response?.status === 401) {
+                // Token is stale or invalid, force logout
+                import('@/store/auth').then(({ useAuthStore }) => {
+                    useAuthStore.getState().clearAuth();
+                });
+                setIsAuthenticated(false);
+            }
         }
     }, [isAuthenticated]);
 
@@ -282,11 +289,17 @@ export default function MovieDetailsPage() {
             const headers: Record<string, string> = {};
             if (token) headers.Authorization = `Bearer ${token}`;
             const resp = await axios.get(`${API_URL}/api/recommend/by-id/${movieId}`, { headers });
-            const recs = (resp.data?.recommendations || [])
-                .filter((r: Recommendation) => r?.poster_path && r.id !== movieId);
+            const recs = resp.data?.recommendations || [];
             setRecommendations(recs);
             if (!recs.length) setRecError('No similar titles found yet.');
-        } catch {
+        } catch (err: unknown) {
+            const axErr = err as { response?: { status?: number; data?: unknown }; message?: string };
+            console.error('[RECOMMEND] request failed', {
+                tmdb_id: movieId,
+                status: axErr?.response?.status,
+                body: axErr?.response?.data,
+                message: axErr?.message,
+            });
             setRecError('Recommendations unavailable. Try again later.');
         } finally {
             setIsLoadingRecs(false);
@@ -764,7 +777,7 @@ export default function MovieDetailsPage() {
 
                         {isLoadingRecs && recommendations.length === 0 && (
                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                                {[1,2,3,4,5,6,7,8,9,10].map(i => (
+                                {[1,2,3,4,5].map(i => (
                                     <div key={i} className="aspect-[2/3]">
                                         <SkeletonPulse className="w-full h-full rounded-xl" />
                                     </div>

@@ -11,7 +11,26 @@ interface Profile {
     favorite_genres: string[];
     favorite_actors: string[];
     favorite_directors: string[];
+    preferred_language?: string;
+    preferred_content_type?: string;
+    preferred_regional_languages?: string[];
+    preferred_movie_genres?: string[];
+    preferred_series_genres?: string[];
+    preferred_release_era?: string;
 }
+
+const LANGUAGES = [
+    { code: 'hi', name: 'Hindi' },
+    { code: 'en', name: 'English' },
+    { code: 'mr', name: 'Marathi' },
+    { code: 'ta', name: 'Tamil' },
+    { code: 'te', name: 'Telugu' },
+    { code: 'ml', name: 'Malayalam' },
+    { code: 'kn', name: 'Kannada' },
+    { code: 'bn', name: 'Bengali' },
+    { code: 'pa', name: 'Punjabi' },
+    { code: 'gu', name: 'Gujarati' },
+];
 
 interface Genre { id: number; name: string; }
 
@@ -44,14 +63,24 @@ export default function ProfilePage() {
           .finally(() => setLoading(false));
     }, [token]);
 
-    const updateSection = async (endpoint: string, data: string[], label: string) => {
+    const updateAllPreferences = async () => {
         setError(null); setSuccess(null); setLoading(true);
         try {
-            await axios.put(`${API_URL}/api/users/favorites/${endpoint}`, data.filter(s => s.trim()), {
+            await axios.put(`${API_URL}/api/users/preferences`, {
+                favorite_genres: profile?.favorite_genres.filter(s => s.trim()),
+                favorite_actors: profile?.favorite_actors.filter(s => s.trim()),
+                favorite_directors: profile?.favorite_directors.filter(s => s.trim()),
+                preferred_language: profile?.preferred_language || null,
+                preferred_content_type: profile?.preferred_content_type || null,
+                preferred_regional_languages: profile?.preferred_regional_languages || [],
+                preferred_movie_genres: profile?.preferred_movie_genres || [],
+                preferred_series_genres: profile?.preferred_series_genres || [],
+                preferred_release_era: profile?.preferred_release_era || null
+            }, {
                 headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
             });
-            setSuccess(`${label} updated successfully`);
-        } catch { setError(`Failed to update ${label.toLowerCase()}`); }
+            setSuccess(`Preferences updated successfully`);
+        } catch { setError(`Failed to update preferences`); }
         finally { setLoading(false); }
     };
 
@@ -131,7 +160,7 @@ export default function ProfilePage() {
                         );
                     })}
                 </div>
-                <button onClick={() => updateSection('genres', profile.favorite_genres, 'Genres')}
+                <button onClick={updateAllPreferences}
                     disabled={loading} className="btn-primary text-xs">Save Genres</button>
             </div>
 
@@ -162,7 +191,7 @@ export default function ProfilePage() {
                 <div className="flex gap-2">
                     <button onClick={() => setProfile({ ...profile, favorite_actors: [...profile.favorite_actors, ''] })}
                         className="btn-outline text-xs">+ Add Actor</button>
-                    <button onClick={() => updateSection('actors', profile.favorite_actors, 'Actors')}
+                    <button onClick={updateAllPreferences}
                         disabled={loading} className="btn-primary text-xs">Save Actors</button>
                 </div>
             </div>
@@ -194,8 +223,68 @@ export default function ProfilePage() {
                 <div className="flex gap-2">
                     <button onClick={() => setProfile({ ...profile, favorite_directors: [...profile.favorite_directors, ''] })}
                         className="btn-outline text-xs">+ Add Director</button>
-                    <button onClick={() => updateSection('directors', profile.favorite_directors, 'Directors')}
+                    <button onClick={updateAllPreferences}
                         disabled={loading} className="btn-primary text-xs">Save Directors</button>
+                </div>
+            </div>
+
+            {/* Language Preference */}
+            <div className="glass-card p-6 mb-6">
+                <h2 className="text-lg font-bold mb-4" style={{ color: '#1e293b' }}>🌐 Language Preference</h2>
+                <p className="text-sm mb-4" style={{ color: '#64748b' }}>Select your preferred language for localized recommendations.</p>
+                <div className="flex gap-2">
+                    <select 
+                        value={profile.preferred_language || ""}
+                        onChange={e => setProfile({ ...profile, preferred_language: e.target.value || undefined })}
+                        className="flex-1 px-4 py-2.5 rounded-xl text-sm outline-none"
+                        style={{ background: 'rgba(241,245,249,0.8)', border: '1px solid rgba(0,0,0,0.06)', color: '#1e293b' }}
+                    >
+                        <option value="">None (Default)</option>
+                        {LANGUAGES.map(lang => (
+                            <option key={lang.code} value={lang.code}>{lang.name}</option>
+                        ))}
+                    </select>
+                    <button onClick={updateAllPreferences}
+                        disabled={loading} className="btn-primary text-xs">Save Language</button>
+                </div>
+            </div>
+
+            {/* Content Type & Era Preferences */}
+            <div className="glass-card p-6 mb-6">
+                <h2 className="text-lg font-bold mb-4" style={{ color: '#1e293b' }}>📺 Content Preferences</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label className="block text-sm mb-2" style={{ color: '#64748b' }}>Preferred Content Type</label>
+                        <select 
+                            value={profile.preferred_content_type || ""}
+                            onChange={e => setProfile({ ...profile, preferred_content_type: e.target.value || undefined })}
+                            className="w-full px-4 py-2.5 rounded-xl text-sm outline-none"
+                            style={{ background: 'rgba(241,245,249,0.8)', border: '1px solid rgba(0,0,0,0.06)', color: '#1e293b' }}
+                        >
+                            <option value="">Both (Default)</option>
+                            <option value="movie">Movies</option>
+                            <option value="tv">Web Series</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm mb-2" style={{ color: '#64748b' }}>Preferred Release Era</label>
+                        <select 
+                            value={profile.preferred_release_era || ""}
+                            onChange={e => setProfile({ ...profile, preferred_release_era: e.target.value || undefined })}
+                            className="w-full px-4 py-2.5 rounded-xl text-sm outline-none"
+                            style={{ background: 'rgba(241,245,249,0.8)', border: '1px solid rgba(0,0,0,0.06)', color: '#1e293b' }}
+                        >
+                            <option value="">Any Era</option>
+                            <option value="2020s">2020s (Current)</option>
+                            <option value="2010s">2010s</option>
+                            <option value="2000s">2000s</option>
+                            <option value="classic">Classic (Pre-2000)</option>
+                        </select>
+                    </div>
+                </div>
+                <div className="flex gap-2">
+                    <button onClick={updateAllPreferences}
+                        disabled={loading} className="btn-primary text-xs w-full text-center justify-center">Save All Preferences</button>
                 </div>
             </div>
         </div>

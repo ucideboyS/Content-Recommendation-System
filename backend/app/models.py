@@ -12,6 +12,12 @@ class User(Base):
     favorite_genres = Column(ARRAY(String), nullable=True)  # Store genres as an array
     favorite_actors = Column(ARRAY(String), nullable=True)
     favorite_directors = Column(ARRAY(String), nullable=True)
+    preferred_language = Column(String, nullable=True)
+    preferred_content_type = Column(String, nullable=True)
+    preferred_regional_languages = Column(ARRAY(String), nullable=True)
+    preferred_movie_genres = Column(ARRAY(String), nullable=True)
+    preferred_series_genres = Column(ARRAY(String), nullable=True)
+    preferred_release_era = Column(String, nullable=True)
 
     # Relationships
     history = relationship("History", back_populates="user", cascade="all, delete-orphan")

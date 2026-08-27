@@ -31,3 +31,17 @@ def get_current_user(token: str = Security(oauth2_scheme), db: Session = Depends
         raise credentials_exception
 
     return user
+
+def get_optional_user(token: str = Security(OAuth2PasswordBearer(tokenUrl="/api/users/login", auto_error=False)), db: Session = Depends(get_db)):
+    if not token:
+        return None
+        
+    from app.models import User
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username: str = payload.get("sub")
+        if not username:
+            return None
+        return db.query(User).filter(User.username == username).first()
+    except JWTError:
+        return None

@@ -6,12 +6,13 @@ from app.database import get_db
 from app.auth import hash_password, verify_password, create_access_token 
 from app.models import User, Movie, History, Rating
 from passlib.context import CryptContext
-from app.schemas import HistoryResponse
+from app.schemas import HistoryResponse, PreferencesUpdate
 from app.dependencies import get_current_user
 from typing import List, Optional
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
+import sqlalchemy.exc
 import os
 from dotenv import load_dotenv
 
@@ -36,6 +37,12 @@ class UserCreate(BaseModel):
     favorite_genres: Optional[List[str]] = None
     favorite_actors: Optional[List[str]] = None
     favorite_directors: Optional[List[str]] = None
+    preferred_language: Optional[str] = None
+    preferred_content_type: Optional[str] = None
+    preferred_regional_languages: Optional[List[str]] = None
+    preferred_movie_genres: Optional[List[str]] = None
+    preferred_series_genres: Optional[List[str]] = None
+    preferred_release_era: Optional[str] = None
 
 class LoginRequest(BaseModel):
     username: str
@@ -59,7 +66,13 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
         password=hashed_password,
         favorite_genres=user.favorite_genres or [],
         favorite_actors=user.favorite_actors or [],
-        favorite_directors=user.favorite_directors or []
+        favorite_directors=user.favorite_directors or [],
+        preferred_language=user.preferred_language,
+        preferred_content_type=user.preferred_content_type,
+        preferred_regional_languages=user.preferred_regional_languages or [],
+        preferred_movie_genres=user.preferred_movie_genres or [],
+        preferred_series_genres=user.preferred_series_genres or [],
+        preferred_release_era=user.preferred_release_era
     )
 
     db.add(new_user)
@@ -135,16 +148,21 @@ def add_history(
         # Fetch movie details from TMDB API to verify it exists
         tmdb_url = f"https://api.themoviedb.org/3/movie/{tmdb_movie_id}"
         response = safe_get(tmdb_url, params={"api_key": TMDB_API_KEY})
-        print(f"TMDB API Request: {tmdb_url}")  # Debugging
-        print(f"TMDB API Status Code: {response.status_code}")  # Debugging
+        
+        media_type = "movie"
+        if response.status_code == 404:
+            # Fallback to checking if it's a TV show
+            tmdb_url = f"https://api.themoviedb.org/3/tv/{tmdb_movie_id}"
+            response = safe_get(tmdb_url, params={"api_key": TMDB_API_KEY})
+            media_type = "tv"
 
         if response.status_code != 200:
             print(f"TMDB API Error: {response.json()}")  # Debugging
-            raise HTTPException(status_code=404, detail="Movie not found on TMDB")
+            raise HTTPException(status_code=404, detail="Movie/TV not found on TMDB")
 
         movie_data = response.json()
-        title = movie_data.get("title", "Unknown Title")
-        print(f"Movie Title: {title}")  # Debugging
+        title = movie_data.get("title", movie_data.get("name", "Unknown Title"))
+        print(f"Content Title: {title}, Type: {media_type}")  # Debugging
 
         # Check if movie already exists in the database
         movie = db.query(Movie).filter(Movie.tmdb_id == tmdb_movie_id).first()
@@ -152,7 +170,7 @@ def add_history(
         if not movie:
             print("Creating new movie entry")  # Debugging
             # Insert new movie into the database
-            new_movie = Movie(tmdb_id=tmdb_movie_id, title=title)  
+            new_movie = Movie(tmdb_id=tmdb_movie_id, title=title, media_type=media_type)  
             db.add(new_movie)
             db.commit()
             db.refresh(new_movie)
@@ -178,9 +196,18 @@ def add_history(
         print("Added new history entry")  # Debugging
 
         return {"message": "History saved successfully"}
+    except HTTPException:
+        raise
+    except sqlalchemy.exc.IntegrityError:
+        db.rollback()
+        # This usually happens in React Strict Mode double-submits where 
+        # two concurrent requests try to insert the same movie.
+        return {"message": "History saved successfully (concurrent insert)"}
     except Exception as e:
-        print(f"Error in add_history: {str(e)}")  # Debugging
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        tb = traceback.format_exc()
+        print(f"Error in add_history: {str(e)}\n{tb}")  # Debugging
+        raise HTTPException(status_code=500, detail=f"{str(e)}\n{tb}")
 
 
 # ✅ Clear User History
@@ -249,91 +276,104 @@ def update_favorite_directors(
     db.commit()
     return {"message": "Favorite directors updated successfully"}
 
+# Update user's extended preferences
+@router.put("/preferences")
+def update_preferences(
+    update_req: PreferencesUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if update_req.preferred_language is not None:
+        user.preferred_language = update_req.preferred_language
+    if update_req.preferred_content_type is not None:
+        user.preferred_content_type = update_req.preferred_content_type
+    if update_req.preferred_regional_languages is not None:
+        user.preferred_regional_languages = update_req.preferred_regional_languages
+    if update_req.preferred_movie_genres is not None:
+        user.preferred_movie_genres = update_req.preferred_movie_genres
+    if update_req.preferred_series_genres is not None:
+        user.preferred_series_genres = update_req.preferred_series_genres
+    if update_req.preferred_release_era is not None:
+        user.preferred_release_era = update_req.preferred_release_era
+    if update_req.favorite_genres is not None:
+        user.favorite_genres = update_req.favorite_genres
+    if update_req.favorite_actors is not None:
+        user.favorite_actors = update_req.favorite_actors
+    if update_req.favorite_directors is not None:
+        user.favorite_directors = update_req.favorite_directors
+        
+    db.commit()
+    return {"message": "Preferences updated successfully"}
+
+
 # Get personalized movie recommendations
 @router.get("/recommendations")
-def get_personalized_recommendations(user: User = Depends(get_current_user)):
+def get_personalized_recommendations(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     try:
-        # Get user's favorite genres, actors, and directors
-        favorite_genres = user.favorite_genres or []
-        favorite_actors = user.favorite_actors or []
-        favorite_directors = user.favorite_directors or []
+        from app.ml_model_v2.hybrid_recommender import recommend_by_id
+        import traceback
 
-        # Build TMDB API query parameters
-        params = {
-            "api_key": TMDB_API_KEY,
-            "language": "en-US",
-            "page": 1,
-            "sort_by": "popularity.desc"
-        }
+        recs = []
+        # 1. If user has history, use the most recent movie as a seed for hybrid_recommender
+        last_history = db.query(History).filter(History.user_id == user.id).order_by(History.timestamp.desc()).first()
+        if last_history and last_history.movie_id:
+            movie = db.query(Movie).filter(Movie.id == last_history.movie_id).first()
+            if movie and movie.tmdb_id:
+                res = recommend_by_id(movie.tmdb_id, top_n=10, user_id=user.id, db=db)
+                recs = res.get("recommendations", [])
 
-        # If user has favorite genres, use them
-        if favorite_genres:
-            # Get genre IDs from TMDB
-            genre_response = safe_get(
-                "https://api.themoviedb.org/3/genre/movie/list",
-                params={"api_key": TMDB_API_KEY, "language": "en-US"}
-            )
-            if genre_response.status_code == 200:
-                genre_map = {genre["name"].lower(): genre["id"] for genre in genre_response.json()["genres"]}
-                genre_ids = [genre_map[genre.lower()] for genre in favorite_genres if genre.lower() in genre_map]
-                if genre_ids:
-                    params["with_genres"] = ",".join(map(str, genre_ids))
-
-        # Fetch recommended movies from TMDB
-        response = safe_get(
-            "https://api.themoviedb.org/3/discover/movie",
-            params=params
-        )
-
-        if response.status_code != 200:
-            return {"recommendations": []}
-
-        movies = response.json()["results"][:10]  # Get top 10 movies
-
-        # If user has favorite actors or directors, try to include their movies
-        if favorite_actors or favorite_directors:
-            for person in favorite_actors + favorite_directors:
-                # Search for person in TMDB
-                person_response = safe_get(
-                    "https://api.themoviedb.org/3/search/person",
-                    params={
-                        "api_key": TMDB_API_KEY,
-                        "query": person,
-                        "language": "en-US"
-                    }
-                )
+        # 2. Fallback if no history or recommender returns empty
+        if not recs:
+            pref_type = (user.preferred_content_type or "both").lower()
+            mtype = "movie" if pref_type == "movie" else "tv"
+            
+            params = {
+                "api_key": TMDB_API_KEY,
+                "language": "en-US",
+                "page": 1,
+                "sort_by": "popularity.desc",
+                "vote_count.gte": 50,
+            }
+            if user.preferred_language:
+                params["with_original_language"] = user.preferred_language
                 
-                if person_response.status_code == 200 and person_response.json()["results"]:
-                    person_id = person_response.json()["results"][0]["id"]
-                    
-                    # Get person's movies
-                    person_movies_response = safe_get(
-                        f"https://api.themoviedb.org/3/person/{person_id}/movie_credits",
-                        params={"api_key": TMDB_API_KEY}
-                    )
-                    
-                    if person_movies_response.status_code == 200:
-                        person_movies = person_movies_response.json()
-                        # Add cast/crew movies to recommendations
-                        for movie in person_movies.get("cast", []) + person_movies.get("crew", []):
-                            if movie not in movies:
-                                movies.append(movie)
+            if user.favorite_genres:
+                genre_response = safe_get(f"https://api.themoviedb.org/3/genre/{mtype}/list", params={"api_key": TMDB_API_KEY, "language": "en-US"})
+                if genre_response.status_code == 200:
+                    genre_map = {g["name"].lower(): g["id"] for g in genre_response.json().get("genres", [])}
+                    gids = [str(genre_map[g.lower()]) for g in user.favorite_genres if g.lower() in genre_map]
+                    if gids:
+                        params["with_genres"] = "|".join(gids)
+
+            if mtype == "tv":
+                params["without_genres"] = "10766,10767,10763,10764,10762,10751,99"
+            else:
+                params["without_genres"] = "99,10762"
+                
+            response = safe_get(f"https://api.themoviedb.org/3/discover/{mtype}", params=params)
+            if response.status_code == 200:
+                results = response.json().get("results", [])
+                for m in results:
+                    m["media_type"] = mtype
+                recs = results[:10]
 
         # Format and return recommendations
         recommendations = [
             {
-                "id": movie["id"],
-                "title": movie["title"],
-                "overview": movie["overview"],
-                "poster_path": movie["poster_path"],
-                "vote_average": movie["vote_average"]
+                "id": movie.get("id"),
+                "title": movie.get("title", movie.get("name", "Unknown Title")),
+                "overview": movie.get("overview", ""),
+                "poster_path": movie.get("poster_path", ""),
+                "vote_average": movie.get("vote_average", 0.0),
+                "media_type": movie.get("media_type", "movie")
             }
-            for movie in movies[:10]  # Limit to top 10 recommendations
+            for movie in recs[:10]
         ]
 
         return {"recommendations": recommendations}
     except Exception as e:
-        print(f"Error getting recommendations: {str(e)}")
+        import traceback
+        print(f"Error getting recommendations: {str(e)}\n{traceback.format_exc()}")
         return {"recommendations": []}
 
 # Get user profile
@@ -345,7 +385,13 @@ def get_profile(user: User = Depends(get_current_user)):
         "email": user.email,
         "favorite_genres": user.favorite_genres or [],
         "favorite_actors": user.favorite_actors or [],
-        "favorite_directors": user.favorite_directors or []
+        "favorite_directors": user.favorite_directors or [],
+        "preferred_language": user.preferred_language,
+        "preferred_content_type": user.preferred_content_type,
+        "preferred_regional_languages": user.preferred_regional_languages or [],
+        "preferred_movie_genres": user.preferred_movie_genres or [],
+        "preferred_series_genres": user.preferred_series_genres or [],
+        "preferred_release_era": user.preferred_release_era
     }
 
 # Update user profile
@@ -361,6 +407,7 @@ def update_profile(
     user.favorite_genres = profile_update.favorite_genres
     user.favorite_actors = profile_update.favorite_actors
     user.favorite_directors = profile_update.favorite_directors
+    user.preferred_language = profile_update.preferred_language
 
     # Only update password if provided
     if profile_update.password:
@@ -377,7 +424,8 @@ def update_profile(
             "email": user.email,
             "favorite_genres": user.favorite_genres,
             "favorite_actors": user.favorite_actors,
-            "favorite_directors": user.favorite_directors
+            "favorite_directors": user.favorite_directors,
+            "preferred_language": user.preferred_language
         }
     }
 

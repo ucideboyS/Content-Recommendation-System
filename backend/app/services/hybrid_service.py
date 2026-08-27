@@ -84,7 +84,10 @@ def get_hybrid_recommendations(
                             "vote_average": rec.get("vote_average", 0),
                             "release_date": rec.get("release_date", ""),
                             "media_type": "movie",
-                            "hybrid_score": round(rec.get("similarity", 0), 3),
+                            "hybrid_score": round(rec.get("final_score", rec.get("similarity", 0)), 3),
+                            "tfidf_similarity": round(rec.get("similarity", 0), 3),
+                            "xgboost_score": round(rec.get("xgboost_score", 0), 3),
+                            "final_score": round(rec.get("final_score", 0), 3),
                         })
                     if len(recommendations) >= top_n:
                         break

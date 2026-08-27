@@ -1,0 +1,21 @@
+Train Groups: 14, Test Groups: 4
+XGBoost HitRate@3: 50.0%, NDCG@3: 0.5625
+TFIDF HitRate@3: 25.0%, NDCG@3: 0.1577
+Semantic HitRate@3: 0.0%, NDCG@3: 0.0000
+
+Feature Diagnostics:
+                Feature     Pos Mean     Neg Mean      Pos Std      Neg Std
+0      tfidf_similarity     0.013444     0.049494     0.015249     0.032741
+1      genre_similarity     0.195370     0.435132     0.262642     0.265166
+2        language_match     0.555556     0.555556     0.511310     0.499688
+3   semantic_similarity    -0.000122     0.000274     0.000891     0.002410
+4     tmdb_vote_average     7.547167     5.746089     0.636699     2.545628
+5       tmdb_popularity    10.982250     4.650179    15.291828     4.965649
+6       tmdb_vote_count  5584.333333  1957.588889  7921.060513  3044.698856
+7             movie_age    51.611111    28.488889    27.553454    21.089027
+8             year_diff    29.500000    25.622222    23.271416    25.903268
+9          cast_overlap     0.000000     0.044444     0.000000     0.332208
+10     director_overlap     0.000000     0.011111     0.000000     0.105409
+11   keyword_similarity     0.007023     0.039264     0.013829     0.031845
+
+Frozen Test Score: -1.2479
