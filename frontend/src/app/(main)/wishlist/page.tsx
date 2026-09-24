@@ -58,6 +58,20 @@ export default function WishlistPage() {
         }
     };
 
+    const getStatusBadge = (date: string, type: string) => {
+        if (type === 'tv' || !date) return null;
+        const today = new Date().toISOString().split('T')[0];
+        const diffDays = (new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+        
+        if (date > today) {
+            const d = Math.ceil(diffDays);
+            return { text: `📅 Releases in ${d} days`, bg: 'rgba(59,130,246,0.1)', color: '#3b82f6' };
+        } else if (diffDays >= -45) {
+            return { text: '🎟 NOW IN THEATRES', bg: 'rgba(236,72,153,0.1)', color: '#ec4899', isTheatrical: true };
+        }
+        return null;
+    };
+
     return (
         <div className="p-6 lg:p-8 min-h-screen">
             <h1 className="text-2xl font-bold mb-1" style={{ color: '#1e293b' }}>❤️ My Wishlist</h1>
@@ -76,20 +90,36 @@ export default function WishlistPage() {
                 </div>
             ) : (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {items.map((item) => item.poster_path && (
+                    {items.map((item) => {
+                        if (!item.poster_path) return null;
+                        const badge = getStatusBadge(item.release_date, item.media_type);
+                        return (
                         <div key={`${item.tmdb_id}-${item.media_type}`} className="animate-fadeIn relative group">
                             <MovieCard
                                 movie={{ id: item.tmdb_id, title: item.title, poster_path: item.poster_path, vote_average: item.vote_average, media_type: item.media_type }}
                                 onClick={() => router.push(`/movies/${item.tmdb_id}`)}
                             />
+                            {badge && (
+                                <div className="mt-2 text-center">
+                                    <span className="text-xs font-bold px-2 py-1 rounded" style={{ background: badge.bg, color: badge.color, display: 'inline-block', width: '100%' }}>
+                                        {badge.text}
+                                    </span>
+                                    {badge.isTheatrical && (
+                                        <button className="text-[10px] font-semibold underline mt-1" style={{ color: badge.color }} 
+                                        onClick={(e) => { e.stopPropagation(); window.open(`https://www.google.com/search?q=${encodeURIComponent(`${item.title} movie showtimes tickets`)}`, '_blank'); }}>
+                                            Find Showtimes
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             <button
                                 onClick={(e) => { e.stopPropagation(); removeItem(item.tmdb_id, item.media_type); }}
-                                className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs z-20"
+                                className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs z-20 shadow-md"
                                 style={{ background: 'rgba(239,68,68,0.9)', color: 'white', backdropFilter: 'blur(4px)' }}
                                 title="Remove from wishlist"
                             >✕</button>
                         </div>
-                    ))}
+                    )})}
                 </div>
             )}
         </div>

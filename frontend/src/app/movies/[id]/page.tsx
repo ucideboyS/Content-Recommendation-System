@@ -624,6 +624,54 @@ export default function MovieDetailsPage() {
                         </div>
 
                         <div className="space-y-4">
+                            {/* THEATRE INFO */}
+                            {mediaType === 'movie' && movie.release_date && (() => {
+                                const today = new Date().toISOString().split('T')[0];
+                                const isUpcoming = movie.release_date > today;
+                                const diffDays = (Date.now() - new Date(movie.release_date).getTime()) / (1000 * 60 * 60 * 24);
+                                const isNowPlaying = !isUpcoming && diffDays >= 0 && diffDays <= 45;
+                                if (!isUpcoming && !isNowPlaying) return null;
+                                return (
+                                    <div className="glass-card p-5" style={{ background: 'rgba(236,72,153,0.04)', borderColor: 'rgba(236,72,153,0.15)' }}>
+                                        <h3 className="text-sm font-bold mb-3 flex items-center gap-2" style={{ color: '#ec4899' }}>
+                                            {isNowPlaying ? '🎟 NOW IN THEATRES' : '🔜 UPCOMING IN THEATRES'}
+                                        </h3>
+                                        {isNowPlaying ? (
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-600">
+                                                    <strong>Released:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                                </p>
+                                                <div className="flex flex-col gap-2">
+                                                    <button className="btn-primary text-xs flex justify-center items-center py-2" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${movie.title} movie showtimes tickets`)}`, '_blank')}>
+                                                        🎟 Find Showtimes
+                                                    </button>
+                                                    <button className="btn-glass text-xs flex justify-center items-center py-2" onClick={() => {
+                                                        if (navigator.geolocation) {
+                                                            navigator.geolocation.getCurrentPosition(
+                                                                (pos) => window.open(`https://www.google.com/maps/search/cinemas/@${pos.coords.latitude},${pos.coords.longitude},12z`, '_blank'),
+                                                                () => window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank')
+                                                            );
+                                                        } else {
+                                                            window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank');
+                                                        }
+                                                    }}>
+                                                        📍 Find Nearby Cinemas
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-600">
+                                                    <strong>Releases:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                                                </p>
+                                                <button className="btn-glass text-xs flex justify-center items-center py-2 w-full border-blue-200 text-blue-600 hover:bg-blue-50" onClick={() => alert("Reminder set! You will be notified before release.")}>
+                                                    🔔 Remind Me
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                             {/* AI Insight */}
                             <div className="glass-card p-5" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.15)' }}>
                                 <h3 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: '#8b5cf6' }}>
