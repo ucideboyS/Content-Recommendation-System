@@ -47,20 +47,20 @@ export default function ComingSoonPage() {
                 const fmtMovie = (m: any): MediaItem => ({ ...m, title: m.title || m.name, media_type: 'movie', release_date: m.release_date || '' });
                 const fmtTv = (t: any): MediaItem => ({ ...t, title: t.name || t.title, media_type: 'tv', release_date: t.first_air_date || '' });
 
-                let upMovies = (movieUp.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.release_date > today);
+                let upMovies = (movieUp.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today);
                 
                 let airTv = (tvAir.data.results || []).map(fmtTv).filter((t: MediaItem) => {
                     const hasExcluded = t.genre_ids?.some((id: number) => EXCLUDED_TV_GENRES.has(id));
-                    return !hasExcluded && t.release_date <= today;
+                    return !hasExcluded && t.poster_path && t.title;
                 });
 
-                let nowTheatres = (movieNow.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.release_date <= today);
+                let nowTheatres = (movieNow.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date <= today);
 
-                let upTheatres = (discoverUpTheatres.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.release_date > today);
+                let upTheatres = (discoverUpTheatres.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today);
 
                 let upTv = (discoverUpTv.data.results || []).map(fmtTv).filter((t: MediaItem) => {
                     const hasExcluded = t.genre_ids?.some((id: number) => EXCLUDED_TV_GENRES.has(id));
-                    return !hasExcluded && t.release_date > today;
+                    return !hasExcluded && t.poster_path && t.title && t.release_date > today;
                 });
 
                 setUpcomingMovies(upMovies);
@@ -81,7 +81,11 @@ export default function ComingSoonPage() {
                             if ((b as any).original_language === prefLang) scoreB += 5;
                             return scoreB - scoreA;
                         });
-                        setTheatricalForYou(ranked.slice(0, 10));
+                        const forYou = ranked.slice(0, 6);
+                        setTheatricalForYou(forYou);
+                        
+                        const forYouIds = new Set(forYou.map((m: MediaItem) => m.id));
+                        setNowInTheatres(nowTheatres.filter((m: MediaItem) => !forYouIds.has(m.id)));
                     } catch { }
                 }
             } catch (err) {
@@ -126,7 +130,7 @@ export default function ComingSoonPage() {
                     <h2 className="text-lg font-bold" style={{ color: '#1e293b' }}>{title}</h2>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
-                    {data.filter(m => m.poster_path).slice(0, 12).map((item) => {
+                    {data.slice(0, 6).map((item) => {
                         const badge = renderBadge(item.release_date, type);
                         return (
                             <div key={item.id} className="animate-fadeIn">

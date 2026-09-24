@@ -98,6 +98,7 @@ export default function MovieDetailsPage() {
     const [aiInsight, setAiInsight] = useState<string | null>(null);
     const [aiInsightLoading, setAiInsightLoading] = useState(false);
     const [inWishlist, setInWishlist] = useState(false);
+    const [isNowPlaying, setIsNowPlaying] = useState(false);
     const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie');
     const [imdbRating, setImdbRating] = useState<string | null>(null);
 
@@ -199,6 +200,26 @@ export default function MovieDetailsPage() {
         fetchMovie();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id, isAuthenticated, storeMovieHistory]);
+
+    useEffect(() => {
+        if (movie && mediaType === 'movie' && movie.status === 'Released') {
+            const fetchNowPlaying = async () => {
+                try {
+                    const [np1, np2, np3] = await Promise.all([
+                        axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=1`).catch(() => ({ data: { results: [] } })),
+                        axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=2`).catch(() => ({ data: { results: [] } })),
+                        axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=3`).catch(() => ({ data: { results: [] } }))
+                    ]);
+                    const ids = new Set<number>();
+                    [np1, np2, np3].forEach(res => {
+                        res.data.results?.forEach((m: any) => ids.add(m.id));
+                    });
+                    setIsNowPlaying(ids.has(movie.id));
+                } catch { }
+            };
+            fetchNowPlaying();
+        }
+    }, [movie, mediaType]);
 
     // Auto-load recommendations when movie loads
     useEffect(() => {
@@ -628,8 +649,6 @@ export default function MovieDetailsPage() {
                             {mediaType === 'movie' && movie.release_date && (() => {
                                 const today = new Date().toISOString().split('T')[0];
                                 const isUpcoming = movie.release_date > today;
-                                const diffDays = (Date.now() - new Date(movie.release_date).getTime()) / (1000 * 60 * 60 * 24);
-                                const isNowPlaying = !isUpcoming && diffDays >= 0 && diffDays <= 45;
                                 if (!isUpcoming && !isNowPlaying) return null;
                                 return (
                                     <div className="glass-card p-5" style={{ background: 'rgba(236,72,153,0.04)', borderColor: 'rgba(236,72,153,0.15)' }}>
@@ -664,8 +683,8 @@ export default function MovieDetailsPage() {
                                                 <p className="text-xs text-slate-600">
                                                     <strong>Releases:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                                                 </p>
-                                                <button className="btn-glass text-xs flex justify-center items-center py-2 w-full border-blue-200 text-blue-600 hover:bg-blue-50" onClick={() => alert("Reminder set! You will be notified before release.")}>
-                                                    🔔 Remind Me
+                                                <button className="btn-glass text-xs flex justify-center items-center py-2 w-full border-blue-200 text-slate-400 hover:bg-transparent cursor-not-allowed" disabled>
+                                                    🔔 Remind Me (Coming Soon)
                                                 </button>
                                             </div>
                                         )}

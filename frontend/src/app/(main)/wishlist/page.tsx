@@ -25,6 +25,7 @@ export default function WishlistPage() {
     const token = useAuthStore(state => state.token);
     const [items, setItems] = useState<WishlistItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [nowPlayingIds, setNowPlayingIds] = useState<Set<number>>(new Set());
 
     useEffect(() => {
         if (!token) return;
@@ -35,9 +36,22 @@ export default function WishlistPage() {
     const fetchWishlist = async () => {
         setLoading(true);
         try {
-            const resp = await axios.get(`${API_URL}/api/wishlist`, {
-                headers: { Authorization: `Bearer ${token}` },
+            const TMDB_KEY = process.env.NEXT_PUBLIC_TMDB_API_KEY;
+            const [resp, np1, np2, np3] = await Promise.all([
+                axios.get(`${API_URL}/api/wishlist`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                }),
+                axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=1`).catch(() => ({ data: { results: [] } })),
+                axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=2`).catch(() => ({ data: { results: [] } })),
+                axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&page=3`).catch(() => ({ data: { results: [] } }))
+            ]);
+            
+            const ids = new Set<number>();
+            [np1, np2, np3].forEach(res => {
+                res.data.results?.forEach((m: any) => ids.add(m.id));
             });
+            setNowPlayingIds(ids);
+            
             setItems(resp.data?.wishlist || []);
         } catch (err) {
             console.error('Failed to fetch wishlist:', err);
@@ -58,7 +72,7 @@ export default function WishlistPage() {
         }
     };
 
-    const getStatusBadge = (date: string, type: string) => {
+    const getStatusBadge = (date: string, type: string, tmdb_id: number) => {
         if (type === 'tv' || !date) return null;
         const today = new Date().toISOString().split('T')[0];
         const diffDays = (new Date(date).getTime() - Date.now()) / (1000 * 60 * 60 * 24);
@@ -66,7 +80,7 @@ export default function WishlistPage() {
         if (date > today) {
             const d = Math.ceil(diffDays);
             return { text: `📅 Releases in ${d} days`, bg: 'rgba(59,130,246,0.1)', color: '#3b82f6' };
-        } else if (diffDays >= -45) {
+        } else if (nowPlayingIds.has(tmdb_id)) {
             return { text: '🎟 NOW IN THEATRES', bg: 'rgba(236,72,153,0.1)', color: '#ec4899', isTheatrical: true };
         }
         return null;
@@ -92,7 +106,7 @@ export default function WishlistPage() {
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
                     {items.map((item) => {
                         if (!item.poster_path) return null;
-                        const badge = getStatusBadge(item.release_date, item.media_type);
+                        const badge = getStatusBadge(item.release_date, item.media_type, item.tmdb_id);
                         return (
                         <div key={`${item.tmdb_id}-${item.media_type}`} className="animate-fadeIn relative group">
                             <MovieCard
