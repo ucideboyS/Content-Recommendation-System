@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, ARRAY, UniqueConstraint, func
+from sqlalchemy import Column, Integer, String, ForeignKey, Float, DateTime, ARRAY, UniqueConstraint, func, Boolean
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -8,7 +8,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    password = Column(String, nullable=False)
+    password = Column(String, nullable=True)
+    auth_provider = Column(String, default="local", nullable=False)
+    google_id = Column(String, unique=True, index=True, nullable=True)
     favorite_genres = Column(ARRAY(String), nullable=True)  # Store genres as an array
     favorite_actors = Column(ARRAY(String), nullable=True)
     favorite_directors = Column(ARRAY(String), nullable=True)
@@ -19,10 +21,21 @@ class User(Base):
     preferred_series_genres = Column(ARRAY(String), nullable=True)
     preferred_release_era = Column(String, nullable=True)
 
+    # Authentication Enhancements
+    two_factor_enabled = Column(Boolean, default=False, nullable=False)
+    totp_secret = Column(String, nullable=True)  # Will store symmetrically encrypted secret
+
+    # Profile Enhancements
+    profile_picture_url = Column(String, nullable=True)
+    google_profile_picture_url = Column(String, nullable=True)
+
     # Relationships
     history = relationship("History", back_populates="user", cascade="all, delete-orphan")
     ratings = relationship("Rating", back_populates="user", cascade="all, delete")
     wishlists = relationship("Wishlist", back_populates="user", cascade="all, delete-orphan")
+    recovery_codes = relationship("RecoveryCode", back_populates="user", cascade="all, delete-orphan")
+    password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
+    oauth_exchange_codes = relationship("OAuthExchangeCode", back_populates="user", cascade="all, delete-orphan")
 
 
 class Movie(Base):
@@ -92,3 +105,40 @@ class Wishlist(Base):
     )
 
     user = relationship("User", back_populates="wishlists")
+
+
+class RecoveryCode(Base):
+    __tablename__ = "recovery_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code_hash = Column(String, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+
+    user = relationship("User", back_populates="recovery_codes")
+
+
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token_hash = Column(String, nullable=False, unique=True, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="password_reset_tokens")
+
+
+class OAuthExchangeCode(Base):
+    __tablename__ = "oauth_exchange_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    code = Column(String, unique=True, index=True, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+
+    user = relationship("User", back_populates="oauth_exchange_codes")

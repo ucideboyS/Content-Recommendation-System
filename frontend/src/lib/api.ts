@@ -41,6 +41,10 @@ export const loginUser = async (userData: { username: string; password: string }
         const response = await axios.post(`${API_BASE_URL}/api/users/login`, userData);
         console.log("Login response:", response.data);
         
+        if (response.data.requires_2fa) {
+            return response.data; // Return the 2FA token
+        }
+
         if (!response.data.access_token) {
             console.error("No access token received in response");
             throw new Error("No access token received");
@@ -52,6 +56,23 @@ export const loginUser = async (userData: { username: string; password: string }
         return response.data;
     } catch (error) {
         console.error("Login error:", error);
+        throw error;
+    }
+};
+
+// Exchange Google OAuth Code
+export const exchangeOAuthCode = async (code: string) => {
+    try {
+        const response = await axios.post(`${API_BASE_URL}/api/users/auth/google/exchange`, { code });
+        if (response.data.requires_2fa) {
+            return response.data;
+        }
+        if (response.data.access_token) {
+            document.cookie = `token=${response.data.access_token}; path=/`;
+        }
+        return response.data;
+    } catch (error) {
+        console.error("OAuth exchange error:", error);
         throw error;
     }
 };
