@@ -710,10 +710,10 @@ export default function MovieDetailsPage() {
                                                         🎟 Book Tickets on BookMyShow
                                                     </button>
                                                     <div className="grid grid-cols-2 gap-2">
-                                                        <button className="btn-glass text-xs flex justify-center items-center py-2 border-slate-300 text-slate-700 font-medium hover:bg-slate-100" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${movie.title} movie showtimes tickets`)}`, '_blank')}>
-                                                            🎟 Find Showtimes
+                                                        <button className="py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors flex justify-center items-center gap-1" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${movie.title} movie showtimes tickets`)}`, '_blank')}>
+                                                            🔎 Find Showtimes
                                                         </button>
-                                                        <button className="btn-glass text-xs flex justify-center items-center py-2 border-slate-300 text-slate-700 font-medium hover:bg-slate-100" onClick={() => {
+                                                        <button className="py-2 px-3 rounded-lg border border-slate-300 bg-white text-slate-700 text-xs font-semibold shadow-sm hover:bg-slate-50 transition-colors flex justify-center items-center gap-1" onClick={() => {
                                                             if (navigator.geolocation) {
                                                                 navigator.geolocation.getCurrentPosition(
                                                                     (pos) => window.open(`https://www.google.com/maps/search/cinemas/@${pos.coords.latitude},${pos.coords.longitude},12z`, '_blank'),
@@ -723,7 +723,7 @@ export default function MovieDetailsPage() {
                                                                 window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank');
                                                             }
                                                         }}>
-                                                            📍 Find Nearby Cinemas
+                                                            📍 Nearby Cinemas
                                                         </button>
                                                     </div>
                                                 </div>
@@ -734,7 +734,13 @@ export default function MovieDetailsPage() {
                                                     <strong>Releases:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                                                 </p>
                                                 <button 
-                                                    className={`btn-glass text-xs flex justify-center items-center py-2 w-full font-medium transition-colors ${isReminded ? 'border-green-300 text-green-600 bg-green-50 hover:bg-green-100' : 'border-blue-300 text-blue-600 hover:bg-blue-50'}`} 
+                                                    className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md flex justify-center items-center gap-2 ${
+                                                        isReminding ? 'opacity-70 cursor-wait' : ''
+                                                    } ${
+                                                        isReminded 
+                                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-0' 
+                                                        : 'bg-blue-600 hover:bg-blue-700 text-white border-0'
+                                                    }`} 
                                                     onClick={handleToggleReminder}
                                                     disabled={isReminding}
                                                 >
