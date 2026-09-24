@@ -1,13 +1,15 @@
 # =============================================================================
 # MovieRec Backend — Python Dependencies
-# Compatible with Python 3.11 / 3.12 (Railway deployment)
-# Last updated: 2026-06-19
+# Compatible with Python 3.11 / 3.12
+# Deployment: Render
+# Last updated: 2026-09-24
 # =============================================================================
 
 # --- Web Framework ---
 fastapi>=0.115.0,<1.0
 uvicorn[standard]>=0.32.0,<1.0
 python-dotenv>=1.0.0,<2.0
+slowapi>=0.1.9,<1.0
 
 # --- Database ---
 SQLAlchemy>=2.0.36,<3.0
@@ -39,4 +41,6 @@ openai>=1.0.0,<2.0
 
 # --- HTML Parsing ---
 beautifulsoup4>=4.12.0,<5.0
-cachetools
+
+# --- Caching ---
+cachetools>=5.5.0,<7.0
