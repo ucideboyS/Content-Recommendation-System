@@ -86,6 +86,13 @@ Do not use filler phrases like "This film", "It seems", "A movie that", or "This
 
 Return only the sentence. No punctuation at the start, no quotation marks around it, no explanation. Just the single sentence."""
 
+MOVIE_INSIGHT_PROMPT = """You are an insightful movie/TV reviewer embedded in a content recommendation platform. You will receive a title, overview, release year, genres, cast, and director/creator. Your job is to write a concise description of approximately 3-5 lines (around 50-90 words) describing THAT specific movie/show.
+
+Keep it spoiler-light. Do not reveal major twists or endings.
+Do NOT use generic templates like "This is a highly rated movie." Instead, describe the actual plot, tone, and character journey based on the provided metadata. Focus on what makes this specific movie/show unique.
+
+Return ONLY the descriptive text. No quotes, no preamble, no markdown formatting."""
+
 # ============================================================================
 # PUBLIC API
 # ============================================================================
@@ -219,4 +226,41 @@ def generate_trending_context(
 
     except Exception as e:
         logger.error(f"Trending context LLM call failed: {e}")
+        return None
+
+def generate_movie_insight(
+    title: str,
+    overview: str,
+    genres: list[str],
+    cast: list[str],
+    director: str,
+    year: int,
+) -> Optional[str]:
+    """Generate a specific 3-5 line insight describing the movie."""
+    client = _get_client()
+    if not client:
+        return None
+
+    user_msg = (
+        f"Title: {title}\n"
+        f"Overview: {overview}\n"
+        f"Genres: {', '.join(genres) if genres else 'Unknown'}\n"
+        f"Cast: {', '.join(cast) if cast else 'Unknown'}\n"
+        f"Director/Creator: {director}\n"
+        f"Year: {year}\n"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": MOVIE_INSIGHT_PROMPT},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.6,
+            max_tokens=200,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"Insight generation LLM call failed: {e}")
         return None

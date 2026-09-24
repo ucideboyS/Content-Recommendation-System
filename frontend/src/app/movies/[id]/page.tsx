@@ -168,12 +168,9 @@ export default function MovieDetailsPage() {
                 fetchImdbRating(resp.data, 'movie');
                 if (isAuthenticated) {
                     storeMovieHistory(Number(id));
-                    fetchAiInsight(resp.data);
                     checkWishlist('movie');
-                } else {
-                    // Fetch AI insight even for guests (non-auth endpoint)
-                    fetchAiInsightGuest(resp.data);
                 }
+                fetchAiInsight(resp.data);
             } catch {
                 // Fallback: try as TV show
                 try {
@@ -189,11 +186,9 @@ export default function MovieDetailsPage() {
                     fetchImdbRating(tvData, 'tv');
                     if (isAuthenticated) {
                         storeMovieHistory(Number(id));
-                        fetchAiInsight(tvData);
                         checkWishlist('tv');
-                    } else {
-                        fetchAiInsightGuest(tvData);
                     }
+                    fetchAiInsight(tvData);
                 } catch {
                     setError('Failed to load details');
                 }
@@ -212,37 +207,31 @@ export default function MovieDetailsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [movie?.id]);
 
-    // AI Insight (authenticated)
+    // AI Insight
     const fetchAiInsight = async (movieData: MovieDetails) => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         setAiInsightLoading(true);
+        const fallbackInsight = movieData.overview
+            ? `${movieData.overview.split('. ').slice(0, 2).join('. ')}.`
+            : `A captivating ${movieData.genres?.[0]?.name?.toLowerCase() || 'title'} worth watching.`;
+
         try {
-            const resp = await axios.post(`${API_URL}/api/ai/trending-context`, {
+            const resp = await axios.post(`${API_URL}/api/ai/movie-insight`, {
                 title: movieData.title,
+                overview: movieData.overview || "",
                 genres: movieData.genres?.map(g => g.name) || [],
+                cast: movieData.credits?.cast?.slice(0, 5).map((c: any) => c.name) || [],
+                director: movieData.credits?.crew?.find((c: any) => c.job === 'Director')?.name || "",
                 year: movieData.release_date ? new Date(movieData.release_date).getFullYear() : 2024,
-                rank: 1,
-            }, { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } });
-            if (resp.data?.context) setAiInsight(resp.data.context);
-        } catch { /* non-critical */ }
-        finally { setAiInsightLoading(false); }
-    };
-
-    // AI Insight fallback for guests — generate a deterministic insight from metadata
-    const fetchAiInsightGuest = (movieData: MovieDetails) => {
-        const genres = movieData.genres?.map(g => g.name) || [];
-        const year = movieData.release_date ? new Date(movieData.release_date).getFullYear() : null;
-        const rating = movieData.vote_average;
-
-        if (rating >= 8) {
-            setAiInsight(`Critically acclaimed ${genres[0]?.toLowerCase() || ''} ${year ? `from ${year}` : ''} — a must-watch with ${movieData.vote_count?.toLocaleString() || 'many'} votes on TMDB.`);
-        } else if (rating >= 7) {
-            setAiInsight(`A well-received ${genres.slice(0, 2).join(' & ').toLowerCase() || 'film'} ${year ? `(${year})` : ''} praised by audiences worldwide.`);
-        } else if (rating >= 6) {
-            setAiInsight(`An entertaining ${genres[0]?.toLowerCase() || ''} pick ${year ? `from ${year}` : ''} with a solid fan following.`);
-        } else {
-            setAiInsight(`A ${genres[0]?.toLowerCase() || 'film'} worth exploring — ${movieData.vote_count || 0} ratings on TMDB.`);
+            });
+            if (resp.data?.insight) {
+                setAiInsight(resp.data.insight);
+            } else {
+                setAiInsight(fallbackInsight);
+            }
+        } catch { 
+            setAiInsight(fallbackInsight);
+        } finally {
+            setAiInsightLoading(false);
         }
     };
 
@@ -460,7 +449,7 @@ export default function MovieDetailsPage() {
                     {movie.backdrop_path && (
                         <Image
                             src={`https://image.tmdb.org/t/p/original${movie.backdrop_path}`}
-                            alt={movie.title} fill className="object-cover" priority
+                            alt={movie.title} fill className="object-cover object-top" priority
                         />
                     )}
                     {/* Stronger gradient overlay for readability */}

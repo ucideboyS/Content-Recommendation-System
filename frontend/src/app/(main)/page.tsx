@@ -277,9 +277,17 @@ export default function HomePage() {
                 setTopRated(finalTop);
                 setUserLangMovies(finalLang);
 
-                // Pick hero from trending
-                const heroCandidate = finalTrend.find((m: Movie) => m.backdrop_path && m.overview);
-                setHeroMovie(heroCandidate || finalTrend[0] || null);
+                // Deterministic hero selection based on 3-day windows
+                const validHeroes = finalTrend.filter((m: Movie) => m.backdrop_path && m.poster_path && m.overview && (m.title || m.name));
+                if (validHeroes.length > 0) {
+                    const windowSizeDays = 3;
+                    const epochDays = Math.floor(Date.now() / (1000 * 60 * 60 * 24));
+                    const windowIndex = Math.floor(epochDays / windowSizeDays);
+                    const heroIndex = windowIndex % validHeroes.length;
+                    setHeroMovie(validHeroes[heroIndex]);
+                } else {
+                    setHeroMovie(finalTrend[0] || null);
+                }
 
             } catch (err) {
                 console.error('Failed to fetch movies:', err);
@@ -354,7 +362,7 @@ export default function HomePage() {
                         src={`https://image.tmdb.org/t/p/original${heroMovie.backdrop_path}`}
                         alt={heroMovie.title}
                         fill
-                        className="object-cover"
+                        className="object-cover object-top"
                         priority
                     />
                     {/* Gradient overlay */}

@@ -57,7 +57,7 @@ def extract_features(seed_movie: dict, candidate_movie: dict, tfidf_similarity: 
     cand_lang = candidate_movie.get("original_language", "en")
     features["language_match"] = 1.0 if seed_lang == cand_lang else 0.0
     
-    # 4. Semantic Similarity (FAISS + SentenceTransformer)
+    # 4. Semantic Similarity (SentenceTransformer)
     features["semantic_similarity"] = safe_float(candidate_movie.get("semantic_score", 0.0))
     
     # 4. TMDB Metadata

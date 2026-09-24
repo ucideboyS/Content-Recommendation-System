@@ -21,7 +21,7 @@ import logging
 import time
 from cachetools import TTLCache, cached
 import threading
-from app.ml_model_v2.semantic_search import generate_embedding, query_similar_movies, calculate_semantic_similarity
+from app.ml_model_v2.semantic_search import generate_embedding, calculate_semantic_similarity
 import os
 import re
 from typing import List, Dict, Optional
@@ -443,56 +443,16 @@ def _recommend_by_id_impl(tmdb_id: int, top_n: int = 10, user_id: int = None, db
     seed_text_semantic = _movie_to_semantic_text(seed_details)
     seed_text_tfidf = _movie_to_tfidf_text(seed_details)
 
-    # Fetch FAISS semantic candidates
     try:
         seed_embedding = generate_embedding(seed_text_semantic)
-        faiss_results = query_similar_movies(seed_embedding, top_k=200)
-        logger.info("[HYBRID] faiss_results=%d  tmdb_id=%s", len(faiss_results), tmdb_id)
     except Exception as e:
-        logger.warning("[HYBRID] FAISS failed  tmdb_id=%s  error=%s", tmdb_id, e)
-        faiss_results = []
+        logger.warning("[HYBRID] generate_embedding failed  tmdb_id=%s  error=%s", tmdb_id, e)
         seed_embedding = None
-        
-    # Merge candidates
+
     candidates_dict = {m["id"]: m for m in tmdb_candidates}
-    for m in tmdb_candidates:
-        m["retrieval_source"] = "tmdb"
-        
-    faiss_scores = {tid: score for tid, score in faiss_results}
-    missing_faiss_ids = [tid for tid in faiss_scores.keys() if tid not in candidates_dict]
-    
-    import concurrent.futures
-    def fetch_basic(tid):
-        return tid, _fetch_movie_details(tid)
-        
-    if missing_faiss_ids:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-            for tid, details in executor.map(fetch_basic, missing_faiss_ids):
-                if details:
-                    details["retrieval_source"] = "faiss"
-                    candidates_dict[tid] = details
-                    
-    for tid in faiss_scores.keys():
-        if tid in candidates_dict:
-            if candidates_dict[tid].get("retrieval_source") == "tmdb":
-                candidates_dict[tid]["retrieval_source"] = "both"
-            candidates_dict[tid]["faiss_score"] = faiss_scores[tid]
-            
     if tmdb_id in candidates_dict:
         del candidates_dict[tmdb_id]
     candidates = list(candidates_dict.values())
-    
-    from app.ml_model_v2.semantic_search import add_movie_to_index, _indexed_ids
-    
-    unindexed = [m for m in candidates if m["id"] not in _indexed_ids]
-    if unindexed:
-        def fetch_full_and_add(cands):
-            for cand in cands:
-                full_cand = _fetch_movie_details(cand["id"])
-                if full_cand:
-                    add_movie_to_index(cand["id"], full_cand)
-        # Background thread so we don't block the API or trigger 429s during request
-        threading.Thread(target=fetch_full_and_add, args=(unindexed,), daemon=True).start()
 
     if not candidates:
         return {"recommendations": [], "strategy": "no_candidates", "selected_title": selected_title}
@@ -504,7 +464,7 @@ def _recommend_by_id_impl(tmdb_id: int, top_n: int = 10, user_id: int = None, db
         cand_semantic_texts = [_movie_to_semantic_text(m) for m in candidates]
         live_scores = calculate_semantic_similarity(seed_embedding, cand_semantic_texts)
         for i, cand in enumerate(candidates):
-            cand["faiss_score"] = float(live_scores[i])
+            cand["semantic_score"] = float(live_scores[i])
 
     # TF-IDF on lightweight metadata (Fast Pass)
     candidate_texts_tfidf = [_movie_to_tfidf_text(m) for m in candidates]
@@ -520,15 +480,15 @@ def _recommend_by_id_impl(tmdb_id: int, top_n: int = 10, user_id: int = None, db
     for i, cand in enumerate(candidates):
         cand["lightweight_similarity"] = float(similarities[i])
         
-    # Union-based Selection: Top 30 TF-IDF + Top 30 FAISS
+    # Union-based Selection: Top 30 TF-IDF + Top 30 Semantic
     candidates_sorted_tfidf = sorted(candidates, key=lambda x: x["lightweight_similarity"], reverse=True)
     top_tfidf = candidates_sorted_tfidf[:30]
     
-    candidates_sorted_faiss = sorted(candidates, key=lambda x: x.get("faiss_score", 0.0), reverse=True)
-    top_faiss = candidates_sorted_faiss[:30]
+    candidates_sorted_semantic = sorted(candidates, key=lambda x: x.get("semantic_score", 0.0), reverse=True)
+    top_semantic = candidates_sorted_semantic[:30]
     
     top_candidates_dict = {m["id"]: m for m in top_tfidf}
-    for m in top_faiss:
+    for m in top_semantic:
         top_candidates_dict[m["id"]] = m
         
     top_candidates = list(top_candidates_dict.values())
@@ -540,6 +500,7 @@ def _recommend_by_id_impl(tmdb_id: int, top_n: int = 10, user_id: int = None, db
             cand.update(full)
         return cand
 
+    import concurrent.futures
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         list(executor.map(fetch_full, top_candidates))
         
@@ -563,7 +524,7 @@ def _recommend_by_id_impl(tmdb_id: int, top_n: int = 10, user_id: int = None, db
             cand["semantic_score"] = float(semantic_scores[i])
     else:
         for cand in top_candidates:
-            cand["semantic_score"] = cand.get("faiss_score", 0.0)
+            cand["semantic_score"] = cand.get("semantic_score", 0.0)
     
     # Run XGBoost scoring
     from app.ml_model_v2.xgboost_ranker import score_candidates

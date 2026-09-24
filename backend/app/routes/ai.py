@@ -2,13 +2,14 @@
 AI-powered routes — Natural Language Search, Mood Recommendations, Trending Context.
 """
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from app.http_client import safe_get
 import os
 import logging
 
+from app.limiter import limiter
 from app.dependencies import get_current_user
 from app.models import User
 from app.services.llm_service import (
@@ -41,6 +42,14 @@ class TrendingContextRequest(BaseModel):
 
 class BatchTrendingRequest(BaseModel):
     movies: List[TrendingContextRequest]
+
+class MovieInsightRequest(BaseModel):
+    title: str = Field(..., max_length=150)
+    overview: str = Field("", max_length=1500)
+    genres: List[str] = Field(default=[], max_length=15)
+    cast: List[str] = Field(default=[], max_length=20)
+    director: str = Field("", max_length=100)
+    year: int = Field(2024, ge=1800, le=2100)
 
 # ---------------------------------------------------------------------------
 # Genre name → TMDB ID mapping
@@ -312,3 +321,22 @@ async def batch_trending_context(req: BatchTrendingRequest):
         line = generate_trending_context(movie.title, movie.genres, movie.year, movie.rank)
         results[movie.title] = line
     return {"contexts": results}
+
+
+from cachetools import TTLCache
+_insight_cache = TTLCache(maxsize=1000, ttl=86400)
+
+@router.post("/movie-insight")
+@limiter.limit("5/minute")
+async def movie_insight(request: Request, req: MovieInsightRequest):
+    """Generate 3-5 line insight for a specific movie/show."""
+    cache_key = f"{req.title}_{req.year}"
+    if cache_key in _insight_cache:
+        return {"insight": _insight_cache[cache_key]}
+        
+    from app.services.llm_service import generate_movie_insight
+    line = generate_movie_insight(req.title, req.overview, req.genres, req.cast, req.director, req.year)
+    if line:
+        _insight_cache[cache_key] = line
+        return {"insight": line}
+    return {"insight": None}
