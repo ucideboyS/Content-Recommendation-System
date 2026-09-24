@@ -5,6 +5,10 @@ import secrets
 from cryptography.fernet import Fernet
 import logging
 
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
 logger = logging.getLogger(__name__)
 
 # Retrieve encryption key from environment, or use a dummy for local dev if missing

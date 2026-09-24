@@ -6,7 +6,7 @@ from typing import List
 from app.database import get_db
 from app.models import User, Reminder
 from app.schemas import ReminderAdd, ReminderResponse
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 
 router = APIRouter()
 

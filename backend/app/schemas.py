@@ -11,7 +11,7 @@ class HistoryResponse(BaseModel):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class PreferencesUpdate(BaseModel):
     preferred_language: Optional[str] = None
