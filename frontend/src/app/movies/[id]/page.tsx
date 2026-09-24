@@ -98,6 +98,8 @@ export default function MovieDetailsPage() {
     const [aiInsight, setAiInsight] = useState<string | null>(null);
     const [aiInsightLoading, setAiInsightLoading] = useState(false);
     const [inWishlist, setInWishlist] = useState(false);
+    const [isReminded, setIsReminded] = useState(false);
+    const [isReminding, setIsReminding] = useState(false);
     const [isNowPlaying, setIsNowPlaying] = useState(false);
     const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie');
     const [imdbRating, setImdbRating] = useState<string | null>(null);
@@ -170,6 +172,7 @@ export default function MovieDetailsPage() {
                 if (isAuthenticated) {
                     storeMovieHistory(Number(id));
                     checkWishlist('movie');
+                    checkReminder('movie');
                 }
                 fetchAiInsight(resp.data);
             } catch {
@@ -188,6 +191,7 @@ export default function MovieDetailsPage() {
                     if (isAuthenticated) {
                         storeMovieHistory(Number(id));
                         checkWishlist('tv');
+                        checkReminder('tv');
                     }
                     fetchAiInsight(tvData);
                 } catch {
@@ -267,6 +271,47 @@ export default function MovieDetailsPage() {
             });
             setInWishlist(resp.data?.in_wishlist || false);
         } catch { /* ignore */ }
+    };
+
+    const checkReminder = async (type?: string) => {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        const mt = type || mediaType;
+        try {
+            const resp = await axios.get(`${API_URL}/api/reminders/check/${id}?media_type=${mt}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            setIsReminded(resp.data?.in_reminders || false);
+        } catch { /* ignore */ }
+    };
+
+    const handleToggleReminder = async () => {
+        if (!isAuthenticated) {
+            router.push('/login');
+            return;
+        }
+        setIsReminding(true);
+        try {
+            const token = localStorage.getItem('token');
+            if (isReminded) {
+                await axios.delete(`${API_URL}/api/reminders/${movie!.id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setIsReminded(false);
+            } else {
+                await axios.post(`${API_URL}/api/reminders`, {
+                    tmdb_id: movie!.id,
+                    media_type: mediaType
+                }, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                setIsReminded(true);
+            }
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setIsReminding(false);
+        }
     };
 
     const toggleWishlist = async () => {
@@ -661,21 +706,26 @@ export default function MovieDetailsPage() {
                                                     <strong>Released:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                                                 </p>
                                                 <div className="flex flex-col gap-2">
-                                                    <button className="btn-primary text-xs flex justify-center items-center py-2" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${movie.title} movie showtimes tickets`)}`, '_blank')}>
-                                                        🎟 Find Showtimes
+                                                    <button className="btn-primary text-xs flex justify-center items-center py-2 shadow-sm font-medium border-pink-500 hover:border-pink-600" style={{ background: '#ec4899', color: '#fff' }} onClick={() => window.open(`https://in.bookmyshow.com/explore/movies?q=${encodeURIComponent(movie.title)}`, '_blank')}>
+                                                        🎟 Book Tickets on BookMyShow
                                                     </button>
-                                                    <button className="btn-glass text-xs flex justify-center items-center py-2" onClick={() => {
-                                                        if (navigator.geolocation) {
-                                                            navigator.geolocation.getCurrentPosition(
-                                                                (pos) => window.open(`https://www.google.com/maps/search/cinemas/@${pos.coords.latitude},${pos.coords.longitude},12z`, '_blank'),
-                                                                () => window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank')
-                                                            );
-                                                        } else {
-                                                            window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank');
-                                                        }
-                                                    }}>
-                                                        📍 Find Nearby Cinemas
-                                                    </button>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <button className="btn-glass text-xs flex justify-center items-center py-2 border-slate-300 text-slate-700 font-medium hover:bg-slate-100" onClick={() => window.open(`https://www.google.com/search?q=${encodeURIComponent(`${movie.title} movie showtimes tickets`)}`, '_blank')}>
+                                                            🎟 Find Showtimes
+                                                        </button>
+                                                        <button className="btn-glass text-xs flex justify-center items-center py-2 border-slate-300 text-slate-700 font-medium hover:bg-slate-100" onClick={() => {
+                                                            if (navigator.geolocation) {
+                                                                navigator.geolocation.getCurrentPosition(
+                                                                    (pos) => window.open(`https://www.google.com/maps/search/cinemas/@${pos.coords.latitude},${pos.coords.longitude},12z`, '_blank'),
+                                                                    () => window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank')
+                                                                );
+                                                            } else {
+                                                                window.open(`https://www.google.com/search?q=cinemas+near+me`, '_blank');
+                                                            }
+                                                        }}>
+                                                            📍 Find Nearby Cinemas
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         ) : (
@@ -683,8 +733,12 @@ export default function MovieDetailsPage() {
                                                 <p className="text-xs text-slate-600">
                                                     <strong>Releases:</strong> {new Date(movie.release_date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                                                 </p>
-                                                <button className="btn-glass text-xs flex justify-center items-center py-2 w-full border-blue-200 text-slate-400 hover:bg-transparent cursor-not-allowed" disabled>
-                                                    🔔 Remind Me (Coming Soon)
+                                                <button 
+                                                    className={`btn-glass text-xs flex justify-center items-center py-2 w-full font-medium transition-colors ${isReminded ? 'border-green-300 text-green-600 bg-green-50 hover:bg-green-100' : 'border-blue-300 text-blue-600 hover:bg-blue-50'}`} 
+                                                    onClick={handleToggleReminder}
+                                                    disabled={isReminding}
+                                                >
+                                                    {isReminded ? '✓ Reminder Set' : '🔔 Remind Me'}
                                                 </button>
                                             </div>
                                         )}

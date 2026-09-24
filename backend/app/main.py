@@ -5,7 +5,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from app.limiter import limiter
 from fastapi.responses import JSONResponse
-from app.routes import user, recommend, ai, wishlist
 import uvicorn
 import os
 import logging
@@ -43,11 +42,14 @@ app.add_middleware(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+from app.routes import user, recommend, ai, wishlist, reminders
+
 # Include routers
 app.include_router(user.router, prefix="/api/users", tags=["users"])
 app.include_router(recommend.router, prefix="/api/recommend", tags=["recommendations"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(wishlist.router, prefix="/api/wishlist", tags=["wishlist"])
+app.include_router(reminders.router, prefix="/api/reminders", tags=["reminders"])
 
 @app.get("/")
 async def root():

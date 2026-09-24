@@ -36,7 +36,7 @@ class User(Base):
     recovery_codes = relationship("RecoveryCode", back_populates="user", cascade="all, delete-orphan")
     password_reset_tokens = relationship("PasswordResetToken", back_populates="user", cascade="all, delete-orphan")
     oauth_exchange_codes = relationship("OAuthExchangeCode", back_populates="user", cascade="all, delete-orphan")
-
+    reminders = relationship("Reminder", back_populates="user", cascade="all, delete-orphan")
 
 class Movie(Base):
     __tablename__ = "movies"
@@ -142,3 +142,19 @@ class OAuthExchangeCode(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="oauth_exchange_codes")
+
+
+class Reminder(Base):
+    __tablename__ = "reminders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    tmdb_id = Column(Integer, nullable=False)
+    media_type = Column(String, default="movie")
+    created_at = Column(DateTime, default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "tmdb_id", "media_type", name="unique_user_reminder_item"),
+    )
+
+    user = relationship("User", back_populates="reminders")

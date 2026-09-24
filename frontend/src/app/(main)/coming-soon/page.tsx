@@ -25,6 +25,8 @@ export default function ComingSoonPage() {
     const [upcomingTv, setUpcomingTv] = useState<MediaItem[]>([]);
     const [nowInTheatres, setNowInTheatres] = useState<MediaItem[]>([]);
     const [upcomingTheatres, setUpcomingTheatres] = useState<MediaItem[]>([]);
+    const [upcomingHindiMovies, setUpcomingHindiMovies] = useState<MediaItem[]>([]);
+    const [upcomingHindiTv, setUpcomingHindiTv] = useState<MediaItem[]>([]);
     const [onAirTv, setOnAirTv] = useState<MediaItem[]>([]);
     const [theatricalForYou, setTheatricalForYou] = useState<MediaItem[]>([]);
     const [loading, setLoading] = useState(true);
@@ -36,18 +38,27 @@ export default function ComingSoonPage() {
                 const today = new Date().toISOString().split('T')[0];
                 const EXCLUDED_TV_GENRES = new Set([10763, 10764, 10767, 10762, 10766]);
 
-                const [movieUp, tvAir, movieNow, discoverUpTheatres, discoverUpTv] = await Promise.all([
+                const [movieUp, tvAir, movieNow, discoverUpTheatres, discoverUpTv, hindiMoviesUp, hindiTvUp] = await Promise.all([
                     axios.get(`https://api.themoviedb.org/3/movie/upcoming?api_key=${TMDB_KEY}&language=en-US&page=1`),
                     axios.get(`https://api.themoviedb.org/3/tv/on_the_air?api_key=${TMDB_KEY}&language=en-US&page=1`),
                     axios.get(`https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_KEY}&language=en-US&page=1`),
                     axios.get(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_release_type=2|3&primary_release_date.gte=${today}&sort_by=popularity.desc&page=1`),
-                    axios.get(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&first_air_date.gte=${today}&sort_by=popularity.desc&page=1`)
+                    axios.get(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&first_air_date.gte=${today}&sort_by=popularity.desc&page=1`),
+                    axios.get(`https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_KEY}&with_original_language=hi&primary_release_date.gte=${today}&sort_by=primary_release_date.asc&page=1`),
+                    axios.get(`https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_KEY}&with_original_language=hi&first_air_date.gte=${today}&sort_by=first_air_date.asc&page=1`)
                 ]);
 
                 const fmtMovie = (m: any): MediaItem => ({ ...m, title: m.title || m.name, media_type: 'movie', release_date: m.release_date || '' });
                 const fmtTv = (t: any): MediaItem => ({ ...t, title: t.name || t.title, media_type: 'tv', release_date: t.first_air_date || '' });
 
-                let upMovies = (movieUp.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today);
+                const sortUpcoming = (a: MediaItem, b: MediaItem) => {
+                    if (!a.release_date) return 1;
+                    if (!b.release_date) return -1;
+                    if (a.release_date === b.release_date) return (b.vote_average || 0) - (a.vote_average || 0);
+                    return a.release_date.localeCompare(b.release_date);
+                };
+
+                let upMovies = (movieUp.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today).sort(sortUpcoming);
                 
                 let airTv = (tvAir.data.results || []).map(fmtTv).filter((t: MediaItem) => {
                     const hasExcluded = t.genre_ids?.some((id: number) => EXCLUDED_TV_GENRES.has(id));
@@ -56,18 +67,27 @@ export default function ComingSoonPage() {
 
                 let nowTheatres = (movieNow.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date <= today);
 
-                let upTheatres = (discoverUpTheatres.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today);
+                let upTheatres = (discoverUpTheatres.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today).sort(sortUpcoming);
 
                 let upTv = (discoverUpTv.data.results || []).map(fmtTv).filter((t: MediaItem) => {
                     const hasExcluded = t.genre_ids?.some((id: number) => EXCLUDED_TV_GENRES.has(id));
                     return !hasExcluded && t.poster_path && t.title && t.release_date > today;
-                });
+                }).sort(sortUpcoming);
+
+                let upHindiMovies = (hindiMoviesUp.data.results || []).map(fmtMovie).filter((m: MediaItem) => m.poster_path && m.title && m.release_date > today).sort(sortUpcoming);
+                
+                let upHindiTv = (hindiTvUp.data.results || []).map(fmtTv).filter((t: MediaItem) => {
+                    const hasExcluded = t.genre_ids?.some((id: number) => EXCLUDED_TV_GENRES.has(id));
+                    return !hasExcluded && t.poster_path && t.title && t.release_date > today;
+                }).sort(sortUpcoming);
 
                 setUpcomingMovies(upMovies);
                 setOnAirTv(airTv);
                 setNowInTheatres(nowTheatres);
                 setUpcomingTheatres(upTheatres);
                 setUpcomingTv(upTv);
+                setUpcomingHindiMovies(upHindiMovies);
+                setUpcomingHindiTv(upHindiTv);
 
                 const token = localStorage.getItem('token');
                 if (token) {
@@ -163,9 +183,11 @@ export default function ComingSoonPage() {
 
             <Section title="In Theatres For You" emoji="🎯" data={theatricalForYou} type="theatrical" />
             <Section title="Now In Theatres" emoji="🎟" data={nowInTheatres} type="theatrical" />
-            <Section title="Upcoming In Theatres" emoji="📅" data={upcomingTheatres} type="upcoming" />
+            <Section title="Upcoming In Theatres" emoji="🔜" data={upcomingTheatres} type="upcoming" />
             <Section title="Upcoming Movies" emoji="🎬" data={upcomingMovies} type="upcoming" />
+            <Section title="Upcoming Hindi Movies" emoji="🇮🇳" data={upcomingHindiMovies} type="upcoming" />
             <Section title="Upcoming TV Series" emoji="📺" data={upcomingTv} type="upcoming" />
+            <Section title="Upcoming Hindi Series" emoji="🇮🇳" data={upcomingHindiTv} type="upcoming" />
             <Section title="On The Air" emoji="🔴" data={onAirTv} type="airing" />
         </div>
     );

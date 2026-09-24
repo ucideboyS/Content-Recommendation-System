@@ -57,3 +57,15 @@ class RegenerateRecoveryCodesRequest(BaseModel):
     password: str
     code: str
     is_recovery_code: Optional[bool] = False
+class ReminderAdd(BaseModel):
+    tmdb_id: int
+    media_type: str = "movie"
+
+class ReminderResponse(BaseModel):
+    id: int
+    tmdb_id: int
+    media_type: str
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
