@@ -6,6 +6,7 @@ import axios from 'axios';
 import Image from 'next/image';
 import Sidebar from '@/components/ui/Sidebar';
 import MovieCard from '@/components/ui/MovieCard';
+import { getProviderDestination } from '@/lib/watchProviders';
 
 interface MovieDetails {
     id: number;
@@ -103,6 +104,8 @@ export default function MovieDetailsPage() {
     const [isNowPlaying, setIsNowPlaying] = useState(false);
     const [mediaType, setMediaType] = useState<'movie' | 'tv'>('movie');
     const [imdbRating, setImdbRating] = useState<string | null>(null);
+    const [watchProviders, setWatchProviders] = useState<any>(null);
+    const [watchProvidersLoading, setWatchProvidersLoading] = useState(false);
 
     // Auth check
     useEffect(() => {
@@ -231,6 +234,28 @@ export default function MovieDetailsPage() {
         handleGetRecommendations();
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [movie?.id]);
+
+    // Fetch Watch Providers
+    useEffect(() => {
+        if (!movie?.id) return;
+        const fetchProviders = async () => {
+            setWatchProvidersLoading(true);
+            try {
+                const resp = await axios.get(`https://api.themoviedb.org/3/${mediaType}/${movie.id}/watch/providers?api_key=${TMDB_KEY}`);
+                if (resp.data?.results?.IN) {
+                    setWatchProviders(resp.data.results.IN);
+                } else {
+                    setWatchProviders({});
+                }
+            } catch (err) {
+                console.error("Failed to fetch watch providers", err);
+                setWatchProviders(null); // Keep null to signify error or unavailable gracefully
+            } finally {
+                setWatchProvidersLoading(false);
+            }
+        };
+        fetchProviders();
+    }, [movie?.id, mediaType]);
 
     // AI Insight
     const fetchAiInsight = async (movieData: MovieDetails) => {
@@ -751,6 +776,89 @@ export default function MovieDetailsPage() {
                                     </div>
                                 );
                             })()}
+                            
+                            {/* WHERE TO WATCH */}
+                            {(() => {
+                                if (watchProvidersLoading) {
+                                    return (
+                                        <div className="glass-card p-5 border border-slate-200 bg-white">
+                                            <h3 className="text-sm font-bold mb-3 flex items-center gap-2 text-slate-800">
+                                                📺 Where to Watch
+                                            </h3>
+                                            <div className="space-y-3">
+                                                <SkeletonPulse className="w-full h-12" />
+                                                <SkeletonPulse className="w-full h-12" />
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                if (watchProviders === null) return null; // Failed to load gracefully
+
+                                const hasProviders = watchProviders.flatrate || watchProviders.free || watchProviders.ads || watchProviders.rent || watchProviders.buy;
+                                if (!hasProviders) {
+                                    return (
+                                        <div className="glass-card p-5 border border-slate-200 bg-white">
+                                            <h3 className="text-sm font-bold mb-2 flex items-center gap-2 text-slate-800">
+                                                📺 Where to Watch
+                                            </h3>
+                                            <p className="text-xs text-slate-500">No streaming providers found in India.</p>
+                                        </div>
+                                    );
+                                }
+
+                                const renderProviderList = (providers: any[], typeLabel: string) => {
+                                    if (!providers || providers.length === 0) return null;
+                                    return providers.map((p: any) => {
+                                        const dest = getProviderDestination(p.provider_name, movie.title, watchProviders.link);
+                                        return (
+                                            <a 
+                                                key={`${p.provider_id}-${typeLabel}`} 
+                                                href={dest.url} 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-3 p-3 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 transition-colors cursor-pointer group shadow-sm bg-white"
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img 
+                                                    src={`https://image.tmdb.org/t/p/original${p.logo_path}`} 
+                                                    alt={p.provider_name} 
+                                                    className="w-10 h-10 rounded-lg shadow-sm"
+                                                />
+                                                <div className="flex-grow">
+                                                    <p className="text-sm font-bold text-slate-800">{p.provider_name}</p>
+                                                    <p className="text-[10px] uppercase font-semibold text-slate-500 tracking-wider">{typeLabel}</p>
+                                                </div>
+                                                <div className="text-xs font-semibold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    {dest.mode === 'direct' ? 'Watch ↗' : 'Search ↗'}
+                                                </div>
+                                            </a>
+                                        );
+                                    });
+                                };
+
+                                return (
+                                    <div className="glass-card p-5 border border-slate-200 bg-white shadow-sm space-y-4">
+                                        <h3 className="text-sm font-bold flex items-center gap-2 text-slate-800 border-b border-slate-100 pb-2">
+                                            📺 Where to Watch
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {renderProviderList(watchProviders.flatrate, 'Subscription')}
+                                            {renderProviderList(watchProviders.free, 'Free')}
+                                            {renderProviderList(watchProviders.ads, 'Ads')}
+                                        </div>
+                                        {(watchProviders.rent?.length > 0 || watchProviders.buy?.length > 0) && (
+                                            <div className="pt-2 border-t border-slate-100">
+                                                <p className="text-xs font-semibold text-slate-400 mb-2 uppercase tracking-wider">Rent / Buy</p>
+                                                <div className="space-y-2">
+                                                    {renderProviderList(watchProviders.rent, 'Rent')}
+                                                    {renderProviderList(watchProviders.buy, 'Buy')}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+
                             {/* AI Insight */}
                             <div className="glass-card p-5" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.15)' }}>
                                 <h3 className="text-sm font-bold mb-2 flex items-center gap-2" style={{ color: '#8b5cf6' }}>
